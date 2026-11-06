@@ -76,6 +76,22 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     restart: unless-stopped
 
+  # Voice input fallback: Whisper speech-to-text on this server's CPU (deploy/whisper). Used when the
+  # browser's speech service is missing or turned off; audio stays here and costs no AI credits.
+  # The model (WHISPER_MODEL: tiny, base, small, medium) downloads into the volume once, at first
+  # start (small: ~500 MB, a few minutes); voice falls back to "unavailable" until it's loaded.
+  whisper:
+    build: ./whisper
+    image: aiser-ee-whisper
+    container_name: aiser-whisper-ee
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_API_KEY: ${WHISPER_API_KEY:-}
+    volumes:
+      - whisper_ee_models:/models
+    mem_limit: ${WHISPER_MEMORY:-2g}
+    restart: unless-stopped
+
   # Drive-time and routing for location analysis: Valhalla (MIT) on OpenStreetMap roads
   # (© OpenStreetMap contributors, ODbL). The first start downloads the region below and builds
   # its road graph (minutes for one country; larger regions need more memory and time); later
@@ -125,6 +141,10 @@ services:
       # Scheduled notebook runs (the notebook-runner service); off while the key is empty.
       NOTEBOOK_RUNNER_URL: ${NOTEBOOK_RUNNER_URL:-http://notebook-runner:8200}
       NOTEBOOK_RUNNER_KEY: ${NOTEBOOK_RUNNER_KEY:-}
+      # Voice input fallback (the whisper service). Set AISER_STT_URL= (empty) in deploy/.env to
+      # use the AI provider's audio model instead.
+      AISER_STT_URL: ${AISER_STT_URL-http://whisper:8000/v1}
+      AISER_STT_API_KEY: ${WHISPER_API_KEY:-}
       TRINO_URL: ${TRINO_URL:-}
       APP_VERSION: ${AISER_VERSION:-1.1.1}
       AISER_VERSION: ${AISER_VERSION:-1.1.1}
@@ -494,6 +514,7 @@ services:
         NEXT_PUBLIC_AISER_VERSION: ${AISER_VERSION:-1.1.1}
         NEXT_PUBLIC_AISER_DEPLOYMENT_MODE: ${AISER_DEPLOYMENT_MODE:-self_host}
         NEXT_PUBLIC_AI_ENABLED: ${NEXT_PUBLIC_AI_ENABLED:-true}
+        NEXT_PUBLIC_VOICE_BROWSER_SPEECH: ${NEXT_PUBLIC_VOICE_BROWSER_SPEECH:-true}
         NEXT_PUBLIC_AUTH_PROVIDER: ${NEXT_PUBLIC_AUTH_PROVIDER:-local}
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
@@ -537,6 +558,7 @@ volumes:
   server_ee_uploads:
   lake_ee_data:
   ollama_ee_models:
+  whisper_ee_models:
   hf_model_cache:
   routing_ee_tiles:
 
