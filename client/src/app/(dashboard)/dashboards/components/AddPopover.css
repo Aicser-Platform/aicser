@@ -76,18 +76,107 @@
 .add-popover {
   display: flex;
   flex-direction: column;
-  width: 360px;
-  max-height: min(560px, 70vh);
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 100px));
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Four tabs must fit side by side (gutter is set via tabBarGutter): antd's default spacing
+   pushed "Blocks" out of view. */
+.add-popover .ant-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.add-popover .ant-tabs > .ant-tabs-nav {
+  margin: 0 0 6px;
+  padding: 0 10px;
+  flex-shrink: 0;
+}
+
+.add-popover .ant-tabs > .ant-tabs-nav .ant-tabs-tab {
+  padding: 6px 0;
+  font-size: 13px;
 }
 
 .add-popover .ant-tabs-content-holder {
-  max-height: min(440px, 56vh);
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.add-popover .ant-tabs-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: auto;
+}
+
+.add-popover .ant-tabs-tabpane {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.add-panel__body,
+.add-panel__charts {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 10px 4px;
+}
+
+.add-panel__search-sticky {
+  flex-shrink: 0;
+  padding-bottom: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.add-panel__content-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(480px, calc(100vh - 280px));
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border) transparent;
+}
+
+.add-panel__content-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.add-panel__content-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.add-panel__content-scroll::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border);
+  border-radius: 4px;
+}
+
+.add-panel__content-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-text-tertiary);
 }
 
 .add-popover__footer {
-  padding-top: 8px;
+  flex-shrink: 0;
+  padding: 8px 10px 0;
+  margin-top: auto;
   border-top: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
 }
 
 /* Dragging a block or chart out: the popover fades so the drop spot on the board shows. */
