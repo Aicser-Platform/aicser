@@ -40,6 +40,23 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Voice input fallback: Whisper speech-to-text on this server's CPU. Used when the browser's speech
+  # service is missing or turned off; audio stays here and costs no AI credits. Pulls
+  # AISER_WHISPER_IMAGE, or builds it from ./whisper when that folder sits next to this file.
+  # The model (WHISPER_MODEL: tiny, base, small, medium) downloads into the volume once, at first
+  # start (small: ~500 MB, a few minutes); voice reports "unavailable" until it's loaded.
+  whisper:
+    image: ${AISER_WHISPER_IMAGE:-aiser-ee-whisper:self-host}
+    build: ./whisper
+    container_name: aiser-whisper-ee
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_API_KEY: ${WHISPER_API_KEY:-}
+    volumes:
+      - whisper_ee_models:/models
+    mem_limit: ${WHISPER_MEMORY:-2g}
+    restart: unless-stopped
+
   server:
     image: ${AISER_SERVER_IMAGE:-aiser-ee-server:self-host}
     container_name: aiser-server-ee
@@ -47,6 +64,10 @@ services:
       AISER_EDITION: enterprise
       AISER_DEPLOYMENT_MODE: ${AISER_DEPLOYMENT_MODE:-self_host}
       AISER_EDITION_LICENSE_KEY: ${AISER_EDITION_LICENSE_KEY:?AISER_EDITION_LICENSE_KEY is required}
+      # Voice input fallback (the whisper service). Set AISER_STT_URL= (empty) in .env to use the
+      # AI provider's audio model instead.
+      AISER_STT_URL: ${AISER_STT_URL-http://whisper:8000/v1}
+      AISER_STT_API_KEY: ${WHISPER_API_KEY:-}
       LICENSE_SERVER_URL: ${LICENSE_SERVER_URL:-https://license.aicser.com}
       AISER_LICENSE_FILE: ${AISER_LICENSE_FILE:-}
       AISER_LICENSE_USAGE_SIGNAL: ${AISER_LICENSE_USAGE_SIGNAL:-true}
@@ -183,7 +204,6 @@ services:
   worker:
     image: ${AISER_SERVER_IMAGE:-aiser-ee-server:self-host}
     container_name: aiser-worker-ee
-    environment: *server-env
     volumes:
       - server_ee_uploads:/app/uploads
       - lake_ee_data:/app/lake
@@ -211,7 +231,6 @@ services:
       server:
         condition: service_healthy
     entrypoint: ["python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
-    restart: unless-stopped
     command: ["python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
 
   client:
@@ -243,6 +262,7 @@ volumes:
   redis_ee_data:
   server_ee_uploads:
   lake_ee_data:
+  whisper_ee_models:
 
 networks:
   default:
