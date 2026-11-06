@@ -142,6 +142,9 @@ ee-logs:
 # asked for -- see docker-compose.ee.yml / .env.ee.example for wiring.
 ee-ollama:
 	$(EE) --profile ollama up -d ollama
+# Rebuild/restart only the voice transcription service (Whisper on CPU; part of `make ee`).
+ee-voice:
+	$(EE) up -d --build whisper
 ee-restart:
 	$(EE) restart server
 ee-restart-client:
@@ -221,7 +224,7 @@ seed-rbac-dev:
         ee-serial ee-build-server ee-build-client \
         eval eval-answers eval-modes eval-router eval-agent eval-agent-candidates eval-decisions migrate-ee \
         dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset ce-fresh \
-        ee ee-down ee-logs ee-ollama ee-client-light ee-restart ee-restart-client \
+        ee ee-down ee-logs ee-ollama ee-voice ee-client-light ee-restart ee-restart-client \
         ee-recreate ee-reset ee-self-host-build ee-self-host-up \
         ee-self-host-pull ee-self-host-logs ee-self-host-down \
         ee-self-host-local-up ee-self-host-local-logs ee-self-host-local-down \

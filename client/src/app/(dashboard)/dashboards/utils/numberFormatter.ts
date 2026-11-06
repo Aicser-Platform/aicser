@@ -181,6 +181,12 @@ export const formatTooltipValue = (
 /**
  * Format numbers for stat widgets (KPI displays)
  */
+/** A tile shows one figure, so a whole number under a million isn't rounded: 1,200, not 1.20k. */
+const exactWhole = (value: number | string): string | null => {
+  const n = typeof value === 'string' ? Number(value) : value;
+  return Number.isInteger(n) && Math.abs(n) >= 1_000 && Math.abs(n) < 1_000_000 ? Math.abs(n).toLocaleString('en-US') : null;
+};
+
 export const formatStatValue = (
   value: number | string,
   format?: 'currency' | 'percent' | 'number',
@@ -188,6 +194,12 @@ export const formatStatValue = (
   unitSuffix?: string,
 ): string => {
   let formatted: string;
+  const exact = format === 'percent' ? null : exactWhole(value);
+  if (exact) {
+    const sign = Number(value) < 0 ? '-' : '';
+    const money = format === 'currency' ? currencySymbol || '$' : '';
+    return `${sign}${money}${exact}${unitSuffix && format !== 'currency' ? unitSuffix : ''}`;
+  }
   switch (format) {
     case 'currency':
       formatted = formatNumber(value, { currency: true, currencySymbol, decimals: 2, compact: true });

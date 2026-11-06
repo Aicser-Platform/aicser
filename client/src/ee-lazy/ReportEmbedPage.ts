@@ -1,0 +1,1 @@
+export { ReportEmbedPage } from '@/ee';

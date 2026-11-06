@@ -159,6 +159,7 @@ TOOL_MODULES = (
     "src.modules.ai.agent_edit_tools",
     "src.modules.ai.agent_sheet_tools",
     "src.modules.ai.agent_doc_tools",
+    "src.modules.ai.web_tools",
     "src.modules.notebook_runs.agent_tools",
     "src.modules.plant.agent_tools",
     "src.modules.activation.agent_tools",

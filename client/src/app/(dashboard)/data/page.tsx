@@ -27,7 +27,7 @@ import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
     consumePipelineWizardReturn,
     parsePipelineExportPreset,
-} from '@/ee/components/pipeline-wizard/pipelineWizardReturn';
+} from '@/utils/pipelineWizardReturn';
 import {
     PlusOutlined,
     DatabaseOutlined,
