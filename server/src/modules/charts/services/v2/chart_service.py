@@ -2259,6 +2259,14 @@ class ChartService:
             sort_by, sort_order, x_field, has_y_metrics=len(y_metrics_list) > 0
         )
 
+        # A stat/gauge can only group by x when its measure is aggregated, and never by the measure
+        # itself (x = "order_count" from a one-row KPI query): GROUP BY x would leave the bare
+        # measure ungrouped and the engine rejects it. Show the single value instead.
+        if chart.chart_type in ("stat", "gauge") and x_field:
+            y_fields = {ym.get("field") for ym in y_metrics_list if isinstance(ym, dict)}
+            if not needs_agg or x_field in y_fields:
+                x_field = None
+
         # Stat without x: single aggregate row
         if chart.chart_type in ("stat", "gauge") and not x_field:
             metric_aliases = []
