@@ -122,7 +122,17 @@ def _storage_configured(config: dict[str, Any]) -> bool:
     return False
 
 
+def email_config_is_platform_managed() -> bool:
+    """On SaaS one mail setup serves every tenant, so it comes from the deployment's env only; an org
+    admin's saved override would change mail for all customers."""
+    from src.core.deployment_mode import is_saas_deployment
+
+    return is_saas_deployment()
+
+
 async def get_effective_email_config() -> dict[str, Any]:
+    if email_config_is_platform_managed():
+        return _email_from_env()
     admin = await _get_admin_setting(EMAIL_SETTING_KEY)
     if admin is not None:
         if admin.get("enabled") is False:
@@ -191,8 +201,13 @@ def public_storage_status(config: dict[str, Any]) -> dict[str, Any]:
 async def get_runtime_config_status() -> dict[str, Any]:
     email = await get_effective_email_config()
     storage = await get_effective_storage_config()
+    if email_config_is_platform_managed():
+        # Tenants don't see the platform's mail server details.
+        email_status = {"managed": True, "enabled": bool(email.get("enabled")), "configured": bool(email.get("configured"))}
+    else:
+        email_status = {"managed": False, **public_email_status(email)}
     return {
-        "email": public_email_status(email),
+        "email": email_status,
         "storage": public_storage_status(storage),
     }
 
