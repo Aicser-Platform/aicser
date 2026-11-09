@@ -290,7 +290,7 @@ async def test_email_config(config: dict[str, Any] | None = None) -> dict[str, A
         def _test_resend() -> None:
             req = urllib.request.Request(
                 "https://api.resend.com/domains",
-                headers={"Authorization": f"Bearer {resolved.get('api_key')}"},
+                headers={"Authorization": f"Bearer {resolved.get('api_key')}", "User-Agent": "aicser-mailer/1.0"},
                 method="GET",
             )
             with urllib.request.urlopen(req, timeout=15) as response:
@@ -305,7 +305,7 @@ async def test_email_config(config: dict[str, Any] | None = None) -> dict[str, A
         port = int(resolved.get("port") or 587)
         username = str(resolved.get("username") or "")
         password = str(resolved.get("password") or "")
-        use_ssl = bool(resolved.get("use_ssl", False))
+        use_ssl = port == 465 or bool(resolved.get("use_ssl", False))
         use_tls = bool(resolved.get("use_tls", True))
         context = ssl.create_default_context()
         if use_ssl:

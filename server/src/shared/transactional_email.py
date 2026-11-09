@@ -18,6 +18,7 @@ import logging
 import smtplib
 import ssl
 import json
+import urllib.error
 import urllib.request
 from email.message import EmailMessage
 from typing import Iterable, List, Tuple
@@ -76,7 +77,10 @@ def _send_sync(
         or os.getenv("SMTP_USERNAME", "").strip()
     ).strip()
     password = str(config.get("password") or os.getenv("SMTP_PASSWORD", "")).strip()
-    if "use_ssl" in config:
+    if port == 465:
+        # 465 is implicit TLS; STARTTLS there just hangs until the timeout (common Resend/Gmail setup).
+        use_ssl = True
+    elif "use_ssl" in config:
         use_ssl = bool(config.get("use_ssl"))
     else:
         use_ssl_env = os.getenv("SMTP_USE_SSL", "").strip().lower()
@@ -160,12 +164,18 @@ def _send_resend_sync(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # Resend's edge rejects the default Python-urllib agent with a 403.
+            "User-Agent": "aicser-mailer/1.0",
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as response:
-        if response.status >= 400:
-            raise RuntimeError(f"Resend returned HTTP {response.status}")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Resend returned HTTP {response.status}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:500]
+        raise RuntimeError(f"Resend returned HTTP {exc.code}: {detail}") from exc
 
 
 async def send_transactional_email(
@@ -194,10 +204,12 @@ async def send_transactional_email(
         email_config = {"provider": "smtp" if smtp_configured() else "resend", "enabled": smtp_configured() or resend_configured()}
 
     if not email_config.get("enabled"):
-        logger.debug(
-            "Transactional email skipped (set SMTP_HOST/SMTP_FROM or RESEND_API_KEY/RESEND_FROM): subject=%r to=%s",
+        logger.warning(
+            "Transactional email skipped: no usable provider (source=%s provider=%s; set SMTP_HOST/SMTP_FROM, "
+            "RESEND_API_KEY/RESEND_FROM, or Settings > Outbound email) subject=%r",
+            email_config.get("source"),
+            email_config.get("provider"),
             subject,
-            to_addrs,
         )
         return False
 
@@ -215,5 +227,9 @@ async def send_transactional_email(
         logger.info("Transactional email sent subject=%r to=%s", subject, to_addrs)
         return True
     except Exception as e:
-        logger.warning("Transactional email failed subject=%r: %s", subject, e)
+        logger.warning(
+            "Transactional email failed provider=%s host=%s port=%s from=%s subject=%r: %s: %s",
+            email_config.get("provider"), email_config.get("host"), email_config.get("port"),
+            email_config.get("from"), subject, type(e).__name__, e,
+        )
         return False
