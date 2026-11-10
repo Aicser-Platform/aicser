@@ -81,6 +81,15 @@ class DataSourcesCRUD:
     def __init__(self):
         self.real_data_manager = real_data_source_manager
     
+    @staticmethod
+    async def _refuse_private_target(config: Optional[Dict[str, Any]], db_type: Optional[str]) -> None:
+        """400 when a database source points at an internal or private host (SaaS)."""
+        from src.shared.datasource_target import datasource_target_refusal
+
+        reason = await datasource_target_refusal(config, db_type)
+        if reason:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=reason)
+
     async def create_data_source(
         self,
         data_source_data: DataSourceCreate,
@@ -88,6 +97,11 @@ class DataSourcesCRUD:
         session: Optional[AsyncSession] = None
     ) -> DataSourceResponse:
         """Create a new data source"""
+        await self._refuse_private_target(
+            getattr(data_source_data, "connection_config", None),
+            getattr(data_source_data, "db_type", None) or getattr(data_source_data, "format", None)
+            or getattr(data_source_data, "type", None),
+        )
         try:
             # Generate unique ID
             data_source_id = str(uuid.uuid4())
@@ -501,6 +515,7 @@ class DataSourcesCRUD:
                         merged[k] = existing.get(k)
                         continue
                 merged[k] = v
+            await self._refuse_private_target(merged, data_source.db_type or data_source.format or data_source.type)
             try:
                 merged = encrypt_credentials(merged)
             except Exception:
