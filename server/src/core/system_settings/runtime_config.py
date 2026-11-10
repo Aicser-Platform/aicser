@@ -142,7 +142,17 @@ async def get_effective_email_config() -> dict[str, Any]:
     return _email_from_env()
 
 
+def storage_config_is_platform_managed() -> bool:
+    """On SaaS one object store serves every tenant, so it comes from the deployment's env only; an
+    org admin's saved override would redirect every customer's files (same rule as email)."""
+    from src.core.deployment_mode import is_saas_deployment
+
+    return is_saas_deployment()
+
+
 async def get_effective_storage_config() -> dict[str, Any]:
+    if storage_config_is_platform_managed():
+        return _storage_from_env()
     admin = await _get_admin_setting(STORAGE_SETTING_KEY)
     if admin is not None:
         if admin.get("enabled") is False:
@@ -206,9 +216,14 @@ async def get_runtime_config_status() -> dict[str, Any]:
         email_status = {"managed": True, "enabled": bool(email.get("enabled")), "configured": bool(email.get("configured"))}
     else:
         email_status = {"managed": False, **public_email_status(email)}
+    if storage_config_is_platform_managed():
+        # Tenants don't see the platform's bucket, endpoint or region.
+        storage_status = {"managed": True, "enabled": bool(storage.get("enabled")), "configured": bool(storage.get("configured"))}
+    else:
+        storage_status = {"managed": False, **public_storage_status(storage)}
     return {
         "email": email_status,
-        "storage": public_storage_status(storage),
+        "storage": storage_status,
     }
 
 
