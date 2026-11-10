@@ -84,7 +84,7 @@ async def test_uri_without_host_is_missing_host():
     assert await dt.datasource_target_refusal({"uri": "postgresql:///db"}, "postgresql") == dt.MISSING_HOST
 
 
-@pytest.mark.parametrize("kind", ["csv", "file", "sample_duckdb", "duckdb", "api", None])
+@pytest.mark.parametrize("kind", ["csv", "file", "sample_duckdb", "api", None])  # duckdb: see test_security_hardening
 async def test_non_network_sources_not_checked(kind):
     assert await dt.datasource_target_refusal({"host": "localhost"}, kind) is None
 

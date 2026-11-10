@@ -327,8 +327,24 @@ async def readiness_check():
 
 
 @app.get("/metrics", include_in_schema=False)
-async def metrics_export():
-    """Expose Prometheus metrics for scraping."""
+async def metrics_export(request: Request):
+    """Expose Prometheus metrics for scraping.
+
+    With METRICS_TOKEN set, the scraper must send ``Authorization: Bearer <token>``. Without it,
+    hosted SaaS does not serve metrics at all (they map routes and traffic for anyone); self-host
+    keeps serving them to the compose network's Prometheus as before.
+    """
+    import hmac
+
+    from src.core.deployment_mode import is_saas_deployment
+
+    token = os.getenv("METRICS_TOKEN", "").strip()
+    if token:
+        sent = (request.headers.get("authorization") or "").removeprefix("Bearer ").strip()
+        if not hmac.compare_digest(sent, token):
+            raise HTTPException(status_code=404, detail="Not found")
+    elif is_saas_deployment():
+        raise HTTPException(status_code=404, detail="Not found")
     if generate_latest is None or CONTENT_TYPE_LATEST is None:
         return Response(
             status_code=503,

@@ -32,6 +32,10 @@ NETWORK_DB_TYPES = frozenset({
 })
 # Engines addressed by host. Others above (snowflake account, databricks workspace) may omit it.
 HOST_REQUIRED_TYPES = NETWORK_DB_TYPES - {"snowflake", "databricks"}
+# Engines that open a file on this server. On SaaS a tenant has no files here, so a path they type
+# can only point at the platform's own files. MotherDuck ("md:…") is a hosted service, not a file.
+LOCAL_FILE_DB_TYPES = frozenset({"duckdb", "sqlite"})
+LOCAL_FILE_REFUSED = "DuckDB and SQLite files on the server can't be used on hosted Aicser. Upload the file instead."
 # data_sources.type values for sources that connect to a database (others: file, lakehouse, api…).
 _DATABASE_SOURCE_TYPES = frozenset({"database", "warehouse", "enterprise_connector", "db"})
 
@@ -133,6 +137,11 @@ async def datasource_target_refusal(config: Optional[Mapping[str, Any]], db_type
         return None
     config = config or {}
     kind = str(db_type or config.get("db_type") or config.get("type") or "").strip().lower()
+    if kind in LOCAL_FILE_DB_TYPES:
+        paths = [str(config.get(k) or "").strip() for k in ("database", "path", "file_path", "host")]
+        if any(p and not p.lower().startswith("md:") for p in paths) or not any(paths):
+            return LOCAL_FILE_REFUSED
+        return None
     # A generic database source with no engine recorded is still checked by whatever host it names.
     if kind not in NETWORK_DB_TYPES and kind not in _DATABASE_SOURCE_TYPES:
         return None
@@ -268,7 +277,8 @@ def config_of_data_source(data_source: Mapping[str, Any]) -> Tuple[dict, Optiona
         return config, None
     kinds: Iterable[Any] = (data_source.get("db_type"), config.get("db_type"), config.get("type"),
                             data_source.get("format"), data_source.get("type"))
-    kind = next((str(k).lower() for k in kinds if k and str(k).lower() in NETWORK_DB_TYPES), None)
+    kind = next((str(k).lower() for k in kinds
+                 if k and (str(k).lower() in NETWORK_DB_TYPES or str(k).lower() in LOCAL_FILE_DB_TYPES)), None)
     if kind is None and source_type in _DATABASE_SOURCE_TYPES:
         kind = source_type  # engine unrecorded: check the hosts it names (dbprobe1 had db_type '')
     return config, kind

@@ -674,6 +674,12 @@ async def save_ai_provider_key(
 
     api_key_val = (payload.api_key or "").strip()
     endpoint_val = (payload.endpoint or "").strip()
+    if endpoint_val:
+        from src.shared.datasource_target import api_url_refusal
+
+        refusal = await api_url_refusal(endpoint_val)
+        if refusal:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=refusal)
     workspace_id_val = (payload.workspace_id or "").strip()
     # If client sends masked value (••••...), keep existing key and only update model/endpoint
     existing_raw_value = None
@@ -778,6 +784,12 @@ async def list_ollama_tags(
     low = base.lower()
     if "169.254.169.254" in low or "metadata.google" in low:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint not allowed")
+    # On SaaS this server shares a private network with the platform's own services: public only.
+    from src.shared.datasource_target import api_url_refusal
+
+    refusal = await api_url_refusal(base)
+    if refusal:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=refusal)
     import httpx
 
     url = f"{base}/api/tags"

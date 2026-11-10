@@ -2613,8 +2613,11 @@ class FeedServiceActionMixin:
         from src.modules.feed.schemas import DigestSendResponse
         from src.shared.transactional_email import send_transactional_email
 
+        import hmac
+
+        # Fails closed: without a configured secret anyone could mail every subscriber on demand.
         expected = os.getenv("FEED_DIGEST_CRON_SECRET", "").strip()
-        if expected and (cron_secret or "").strip() != expected:
+        if not expected or not hmac.compare_digest((cron_secret or "").strip(), expected):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid cron secret")
 
         preview = await self.get_digest_preview(period_days=7, limit=8)
