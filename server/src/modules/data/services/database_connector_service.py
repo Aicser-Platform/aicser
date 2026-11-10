@@ -169,7 +169,13 @@ class DatabaseConnectorService:
                 }
             
             logger.info("Testing %s connection (host redacted)", db_type)
-            
+
+            from src.shared.datasource_target import datasource_target_refusal
+
+            refusal = await datasource_target_refusal(config, db_type)
+            if refusal:
+                return {'success': False, 'error': refusal}
+
             # Use HTTP API for ClickHouse
             if db_type == 'clickhouse':
                 return await self._test_clickhouse_http(config)
@@ -663,7 +669,13 @@ class DatabaseConnectorService:
             db_type = config.get('type', '').lower()
             
             logger.info(f"🔍 Getting schema for {db_type} database")
-            
+
+            from src.shared.datasource_target import datasource_target_refusal
+
+            refusal = await datasource_target_refusal(config, db_type)
+            if refusal:
+                return {'success': False, 'error': refusal}
+
             # Use HTTP API for ClickHouse
             if db_type == 'clickhouse':
                 return await self._get_clickhouse_schema_http(config)

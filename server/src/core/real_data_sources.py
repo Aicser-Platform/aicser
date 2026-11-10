@@ -163,6 +163,10 @@ class RealDataSourceManager:
             except Exception:
                 logger.debug("Decrypt skipped/failed for data source config")
 
+            from src.shared.datasource_target import ensure_datasource_target_allowed
+
+            await ensure_datasource_target_allowed(config, data_source.format)
+
             # Retry loop for flaky network/connectivity
             attempts = int(os.getenv("DB_CONN_RETRIES", "3"))
             base_delay = float(os.getenv("DB_CONN_RETRY_BASE_DELAY", "0.5"))
@@ -330,8 +334,12 @@ class RealDataSourceManager:
                 headers["X-API-Key"] = config["api_key"]
 
             # Test API endpoint
+            from src.shared.datasource_target import ensure_api_url_allowed, private_targets_allowed
+
+            await ensure_api_url_allowed(config["base_url"])
             response = requests.get(
-                config["base_url"], headers=headers, timeout=config.get("timeout", 30)
+                config["base_url"], headers=headers, timeout=config.get("timeout", 30),
+                allow_redirects=private_targets_allowed(),  # a redirect could point inward (SaaS)
             )
 
             if response.status_code == 200:
@@ -473,6 +481,10 @@ class RealDataSourceManager:
             except Exception:
                 logger.debug("Failed to decrypt connection config for query execution; proceeding with raw config")
 
+            from src.shared.datasource_target import ensure_datasource_target_allowed
+
+            await ensure_datasource_target_allowed(config, data_source.format)
+
             if data_source.format == "postgresql":
                 # Execute PostgreSQL query
                 conn = psycopg2.connect(
@@ -554,8 +566,12 @@ class RealDataSourceManager:
                 headers["X-API-Key"] = config["api_key"]
 
             # Execute API request
+            from src.shared.datasource_target import ensure_api_url_allowed, private_targets_allowed
+
+            await ensure_api_url_allowed(config["base_url"])
             response = requests.get(
-                config["base_url"], headers=headers, timeout=config.get("timeout", 30)
+                config["base_url"], headers=headers, timeout=config.get("timeout", 30),
+                allow_redirects=private_targets_allowed(),  # a redirect could point inward (SaaS)
             )
 
             if response.status_code == 200:
@@ -615,6 +631,13 @@ class RealDataSourceManager:
         """Get database schema"""
         try:
             config = data_source.connection_config
+            from src.shared.datasource_target import ensure_datasource_target_allowed
+
+            try:
+                checked = decrypt_credentials(config or {})
+            except Exception:
+                checked = config or {}
+            await ensure_datasource_target_allowed(checked, data_source.format)
 
             if data_source.format == "postgresql":
                 # Get PostgreSQL schema
