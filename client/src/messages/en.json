@@ -15331,6 +15331,7 @@
   "workspace_storage": {
     "title": "Workspace lake storage",
     "subtitle": "Pipelines use built-in storage (the server's lake volume) until you set a bucket here.",
+    "platform_managed": "On hosted Aicser, lake storage is managed by the platform. To use your own bucket, connect it in a pipeline's Destination step.",
     "info": "Built-in storage needs no setup and suits one server. Set an S3-compatible bucket for scale and backups: AWS S3, Cloudflare R2, Google Cloud Storage (HMAC keys), Azure (S3 API), DigitalOcean Spaces. An organization can also connect its own bucket from a pipeline's Destination step.",
     "enabled": "Enabled",
     "backend": "Backend",
