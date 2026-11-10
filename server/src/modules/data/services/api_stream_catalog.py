@@ -95,7 +95,10 @@ async def fetch_openapi_spec(url: str, config: Dict[str, Any]) -> Optional[Dict[
         cfg = _as_dict(config)
         headers = cfg.get("headers") or {}
         timeout = max(5, min(60, int(cfg.get("timeout", 30))))
-        async with aiohttp.ClientSession() as session:
+        from src.shared.datasource_target import ensure_api_url_allowed, public_client_session
+
+        await ensure_api_url_allowed(url)
+        async with public_client_session() as session:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
                 if resp.status >= 400:
                     return None

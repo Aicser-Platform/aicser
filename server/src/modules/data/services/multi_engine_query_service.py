@@ -1048,6 +1048,19 @@ class MultiEngineQueryService:
                 "Row security could not be applied to this query."
             ) from exc
 
+    @staticmethod
+    async def _refuse_private_target(data_source: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """An error result when a database source points at an internal or private host (SaaS)."""
+        from src.shared.datasource_target import config_of_data_source, datasource_target_refusal, private_targets_allowed
+
+        if private_targets_allowed():
+            return None
+        config, kind = config_of_data_source(data_source or {})
+        reason = await datasource_target_refusal(config, kind) if kind else None
+        if not reason:
+            return None
+        return {"success": False, "error": reason, "data": [], "columns": [], "row_count": 0}
+
     async def execute_query(
         self,
         query: str,
@@ -1066,6 +1079,9 @@ class MultiEngineQueryService:
         cannot reach data by a route that skips it.
         """
         if str(execution_mode or "read").lower() == "write":
+            refused = await self._refuse_private_target(data_source)
+            if refused:
+                return refused
             err = check_sql_routine_ddl_safety(query)
             if err:
                 return {"success": False, "error": err, "data": [], "columns": [], "row_count": 0}
@@ -1109,6 +1125,10 @@ class MultiEngineQueryService:
                 "columns": [],
                 "row_count": 0,
             }
+        # Checked on the source that will actually be queried (after lakehouse routing).
+        refused = await self._refuse_private_target(data_source)
+        if refused:
+            return refused
 
         try:
             query, columns_omitted = await self._enforce_column_security(
