@@ -196,15 +196,30 @@ def test_an_assistant_uses_its_own_model_and_temperature():
     assert request.model == "chosen" and request.temperature == 0.2
 
 
-def test_a_shared_assistant_cant_use_a_personal_key(monkeypatch):
+async def test_a_shared_assistant_cant_use_a_personal_key(monkeypatch):
     import pytest
     from fastapi import HTTPException
 
     from ee.modules.embed import agents_router as R
     from src.modules.ai.services import litellm_service as L
 
-    monkeypatch.setattr(L.LiteLLMService, "get_available_models", lambda self: {"models": [{"id": "org-model"}]})
-    R._check_model("org-model")
-    R._check_model("")
+    async def _no_hydrate(self, user_id, organization_id=None):
+        return None
+
+    monkeypatch.setattr(L.LiteLLMService, "hydrate_user_byok_models", _no_hydrate)
+    monkeypatch.setattr(
+        L.LiteLLMService,
+        "get_available_models",
+        lambda self: {"models": [
+            {"id": "org-model"},
+            {"id": "byok_mine", "byok_scope": "user"},
+            {"id": "byok_google", "byok_scope": "org"},
+        ]},
+    )
+    await R._check_model("org-model", "u", "o")
+    await R._check_model("", "u", "o")
+    await R._check_model("byok_google", "u", "o")  # a key the organization shares
     with pytest.raises(HTTPException):
-        R._check_model("byok_mine")
+        await R._check_model("byok_mine", "u", "o")  # one person's own key
+    with pytest.raises(HTTPException):
+        await R._check_model("byok_unknown", "u", "o")

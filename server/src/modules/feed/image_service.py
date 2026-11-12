@@ -160,7 +160,16 @@ async def read_image(db: AsyncSession, image_id: UUID, viewer_id: Optional[UUID]
             raise not_found
     from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
 
-    return await UploadDatasourceStorageService().get_file(row.object_key, None)
+    try:
+        return await UploadDatasourceStorageService().get_file(row.object_key, None)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # The stored bytes are gone (bucket deleted/renamed, object removed, storage backend
+        # switched). That's a missing image, not a server crash: answer 404 instead of letting
+        # the storage error escape as a 500 (which also left the DB connection un-returned).
+        logger.warning("Feed image %s unreadable from storage: %s", image_id, type(exc).__name__)
+        raise not_found from exc
 
 
 def _as_uuid(value: Any) -> Optional[UUID]:
