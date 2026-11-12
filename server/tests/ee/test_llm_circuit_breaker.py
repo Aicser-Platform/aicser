@@ -201,3 +201,77 @@ async def test_half_open_recovers_without_redis_too(monkeypatch):
     assert await breaker.should_allow_request() is False
     now = 1_022.0
     assert await breaker.should_allow_request() is True
+
+
+async def test_llm_breakers_are_scoped_by_key_and_model(monkeypatch):
+    """One bad model (or one organization's bad key) must not block other models or keys for
+    the same provider -- a retired gemini model used to lock out a working one for everyone."""
+    from ee.modules.ai.utils import circuit_breaker as cb
+
+    monkeypatch.setattr(cb, "_get_async_redis", lambda: None)
+    await cb.CircuitBreakerRegistry().reset_all()
+
+    org_a = cb.get_llm_circuit_breaker("google", "keyA")
+    org_b = cb.get_llm_circuit_breaker("google", "keyB")
+    old_model = cb.get_llm_circuit_breaker("google", "keyA", "gemini/gemini-3.6-flash")
+    new_model = cb.get_llm_circuit_breaker("google", "keyA", "gemini/gemini-3-flash-preview")
+
+    assert len({org_a.name, org_b.name, old_model.name, new_model.name}) == 4
+    assert org_a.name == "llm_operations:google:keya"
+    assert old_model.name == "llm_operations:google:keya:gemini_gemini-3.6-flash"
+
+
+async def _run_acompletion(monkeypatch, *, fail_with=None, model="gemini/gemini-3.6-flash", api_key="k1"):
+    from ee.modules.ai.services import litellm_service as L
+
+    async def _fake_completion(params):
+        if fail_with is not None:
+            raise fail_with
+        return {"ok": True}
+
+    monkeypatch.setattr(L, "_completion_with_heartbeat", _fake_completion)
+    return await L.acompletion(model=model, api_key=api_key, messages=[{"role": "user", "content": "hi"}])
+
+
+async def test_a_timing_out_model_does_not_block_other_models_on_the_same_key(monkeypatch):
+    import asyncio
+
+    import pytest
+
+    from ee.modules.ai.services import litellm_service as L
+    from ee.modules.ai.utils import circuit_breaker as cb
+
+    monkeypatch.setattr(cb, "_get_async_redis", lambda: None)
+    await cb.CircuitBreakerRegistry().reset_all()
+
+    for _ in range(5):
+        with pytest.raises(RuntimeError):
+            await _run_acompletion(monkeypatch, fail_with=RuntimeError("upstream 503"))
+        await asyncio.sleep(0)  # let the fire-and-forget record_failure run
+
+    with pytest.raises(L._LLMCircuitBreakerOpen):
+        await _run_acompletion(monkeypatch)  # same model: blocked
+    assert await _run_acompletion(monkeypatch, model="gemini/gemini-3-flash-preview") == {"ok": True}
+    assert await _run_acompletion(monkeypatch, api_key="another-org") == {"ok": True}
+
+
+async def test_a_rejected_key_blocks_every_model_on_that_key_only(monkeypatch):
+    import asyncio
+
+    import pytest
+
+    from ee.modules.ai.services import litellm_service as L
+    from ee.modules.ai.utils import circuit_breaker as cb
+
+    monkeypatch.setattr(cb, "_get_async_redis", lambda: None)
+    await cb.CircuitBreakerRegistry().reset_all()
+
+    bad_key = RuntimeError("400 API key not valid. Please pass a valid API key. API_KEY_INVALID")
+    for _ in range(5):
+        with pytest.raises(RuntimeError):
+            await _run_acompletion(monkeypatch, fail_with=bad_key, api_key="bad")
+        await asyncio.sleep(0)
+
+    with pytest.raises(L._LLMCircuitBreakerOpen, match="rejected the API key"):
+        await _run_acompletion(monkeypatch, model="gemini/gemini-3-flash-preview", api_key="bad")
+    assert await _run_acompletion(monkeypatch, api_key="good") == {"ok": True}
