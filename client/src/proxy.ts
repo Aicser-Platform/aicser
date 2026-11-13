@@ -13,6 +13,10 @@ const PUBLIC_PATHS = [
   '/embed/',
   // Short share links: the page itself decides who may open one.
   '/s/',
+  // Docs / Slides view links (the page asks the server, which checks approval and who may open it).
+  '/o/',
+  // Phone remote for a slide show: the token in the address is the key, the phone isn't signed in.
+  '/remote/',
   '/embedded/',
   '/health',
   '/offline',

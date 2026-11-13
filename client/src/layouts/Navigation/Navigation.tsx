@@ -3,7 +3,7 @@
 import { useOrgMenu } from '@/hooks/useOrgMenu';
 import useClickOutside from '@/hooks/useClickOutside';
 import {
-  AlertOutlined, ApartmentOutlined, BulbOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined, ScheduleOutlined, SafetyCertificateOutlined,
+  AlertOutlined, ApartmentOutlined, FilePptOutlined, FileWordOutlined, BulbOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined, ScheduleOutlined, SafetyCertificateOutlined,
   TableOutlined, SettingOutlined, ThunderboltOutlined, ToolOutlined,
 } from '@ant-design/icons';
 import { Button, Layout } from 'antd';
@@ -53,6 +53,8 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   'query-editor': <CodeOutlined />,
   notebooks: <ReadOutlined />,
   sheets: <TableOutlined />,
+  docs: <FileWordOutlined />,
+  slides: <FilePptOutlined />,
   spatial: <EnvironmentOutlined />,
   models: <ExperimentOutlined />,
   'ai-decisions': <ThunderboltOutlined />,
@@ -79,6 +81,8 @@ const COMMUNITY_ICONS: SidebarNavIconMap = {
   'query-editor': <CodeOutlined />,
   notebooks: <ReadOutlined />,
   sheets: <TableOutlined />,
+  docs: <FileWordOutlined />,
+  slides: <FilePptOutlined />,
   spatial: <EnvironmentOutlined />,
   data: <DatabaseOutlined />,
   prepare: <ToolOutlined />,

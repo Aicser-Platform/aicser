@@ -6998,7 +6998,11 @@
     "hint_documents": "Ask 可以搜索并作为来源引用的文档",
     "hint_warehouse": "在行级安全、限额和成本控制下查询数据仓库表",
     "sheets": "表格",
+    "docs": "文档",
+    "slides": "幻灯片",
     "hint_sheets": "兼容 Excel、数据实时更新的电子表格",
+    "hint_docs": "类似 Word 的文档：撰写、排版，打开和保存 .docx",
+    "hint_slides": "类似 PowerPoint 的演示文稿：设计、放映，打开和保存 .pptx",
     "pipelines": "数据管道",
     "hint_semantic_layer": "供 Ask 和仪表板使用的官方指标、维度和表关联（星型与雪花）",
     "agent_tasks": "自动化",
@@ -8074,7 +8078,12 @@
     "source_question": "问题:{question}",
     "source_rows": "分析行数:{rows}",
     "source_query": "使用的查询",
-    "more_formats": "更多格式"
+    "more_formats": "更多格式",
+    "open_in_docs": "在文档中打开",
+    "open_in_slides": "在幻灯片中打开",
+    "open_in_docs_hint": "用这份报告在 Aicser 文档中新建文档（图表为图片），可编辑和共享",
+    "open_in_slides_hint": "用这份报告在 Aicser 幻灯片中新建演示文稿，可编辑和放映",
+    "open_in_office_failed": "无法打开报告：{message}"
   },
   "scheduled_reports": {
     "load_failed": "加载计划报告失败",

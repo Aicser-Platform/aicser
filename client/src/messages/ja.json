@@ -6998,7 +6998,11 @@
     "hint_documents": "Ask が検索し出典として引用できるドキュメント",
     "hint_warehouse": "行レベルのセキュリティ、上限、コスト管理のもとでウェアハウスを照会",
     "sheets": "スプレッドシート",
+    "docs": "ドキュメント",
+    "slides": "スライド",
     "hint_sheets": "ライブデータ付きの Excel 互換スプレッドシート",
+    "hint_docs": "Word のような文書：作成・書式設定、.docx の読み込みと保存",
+    "hint_slides": "PowerPoint のようなプレゼンテーション：作成・発表、.pptx の読み込みと保存",
     "pipelines": "パイプライン",
     "hint_semantic_layer": "Ask とダッシュボード向けの公式メトリクス・ディメンション・テーブル結合（スターとスノーフレーク）",
     "agent_tasks": "オートメーション",
@@ -8074,7 +8078,12 @@
     "source_question": "質問:{question}",
     "source_rows": "分析した行数:{rows}",
     "source_query": "使用したクエリ",
-    "more_formats": "その他の形式"
+    "more_formats": "その他の形式",
+    "open_in_docs": "ドキュメントで開く",
+    "open_in_slides": "スライドで開く",
+    "open_in_docs_hint": "このレポートから Aicser ドキュメントの新しい文書を作成（グラフは画像）。編集・共有できます",
+    "open_in_slides_hint": "このレポートから Aicser スライドを新規作成。編集・発表できます",
+    "open_in_office_failed": "レポートを開けませんでした: {message}"
   },
   "scheduled_reports": {
     "load_failed": "スケジュールされたレポートの読み込みに失敗しました",

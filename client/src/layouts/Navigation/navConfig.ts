@@ -3,6 +3,8 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
   '/query-editor': ['sec-analyze'],
   '/notebooks': ['sec-analyze'],
   '/sheets': ['sec-analyze'],
+  '/docs': ['sec-analyze'],
+  '/slides': ['sec-analyze'],
   '/spatial': ['sec-analyze'],
   '/models': ['sec-predict'],
   '/ai-decisions': ['sec-predict'],
@@ -28,6 +30,8 @@ export const NAV_ROUTES: Record<string, string> = {
   'query-editor': '/query-editor',
   notebooks: '/notebooks',
   sheets: '/sheets',
+  docs: '/docs',
+  slides: '/slides',
   spatial: '/spatial',
   warehouse: '/lakehouse',
   models: '/models',
@@ -59,6 +63,8 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   'query-editor': 'query_editor',
   notebooks: 'notebooks',
   sheets: 'sheets',
+  docs: 'docs',
+  slides: 'slides',
   spatial: 'spatial',
   'sec-predict': 'cat_ai',
   models: 'models',
@@ -82,6 +88,8 @@ export const NAV_PARENT_GROUP: Record<string, string> = {
   'query-editor': 'sec-analyze',
   notebooks: 'sec-analyze',
   sheets: 'sec-analyze',
+  docs: 'sec-analyze',
+  slides: 'sec-analyze',
   spatial: 'sec-analyze',
   models: 'sec-predict',
   'ai-decisions': 'sec-predict',
@@ -107,6 +115,8 @@ export const NAV_HINT_KEYS: Record<string, string> = {
   'query-editor': 'hint_sql_editor',
   notebooks: 'hint_notebooks',
   sheets: 'hint_sheets',
+  docs: 'hint_docs',
+  slides: 'hint_slides',
   spatial: 'hint_maps',
   models: 'hint_models',
   'ai-decisions': 'hint_ai_decisions',
@@ -156,7 +166,7 @@ export function flattenNavLinks(items: NavItemDef[]): NavLinkDef[] {
 
 /** Maps (/spatial) is switched off until it's ready; NEXT_PUBLIC_FEATURE_MAPS=true brings it back. */
 export const MAPS_ENABLED = process.env.NEXT_PUBLIC_FEATURE_MAPS === 'true';
-const analyzeTools = (): string[] => ['chart-designer', 'query-editor', 'sheets', 'notebooks', ...(MAPS_ENABLED ? ['spatial'] : [])];
+const analyzeTools = (): string[] => ['chart-designer', 'query-editor', 'sheets', 'docs', 'slides', 'notebooks', ...(MAPS_ENABLED ? ['spatial'] : [])];
 
 const link = (key: string): NavLinkDef => ({ key, labelKey: NAV_LABEL_KEYS[key], href: NAV_ROUTES[key] });
 const top = (key: string): NavItemDef => ({ kind: 'link', ...link(key) });
@@ -315,7 +325,7 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/semantic-layer' || pathname.startsWith('/semantic-layer/')) return 'semantic-layer';
   if (pathname === '/alerts') return 'alerts';
   // Pages added later were missing here, so the sidebar highlighted nothing on them.
-  for (const key of ['notebooks', 'sheets', 'spatial', 'warehouse', 'models', 'dashboards', 'prepare'] as const) {
+  for (const key of ['notebooks', 'sheets', 'docs', 'slides', 'spatial', 'warehouse', 'models', 'dashboards', 'prepare'] as const) {
     if (pathname === NAV_ROUTES[key] || pathname.startsWith(`${NAV_ROUTES[key]}/`)) return key;
   }
   return '';

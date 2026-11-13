@@ -7246,7 +7246,11 @@
     "hint_documents": "Uploaded files and libraries for Ask to search and cite — not the data catalog",
     "hint_warehouse": "Lake storage and query compute for Gold tables — separate from pipelines",
     "sheets": "Sheets",
+    "docs": "Docs",
+    "slides": "Slides",
     "hint_sheets": "Excel-compatible spreadsheets with live data",
+    "hint_docs": "Word-style documents: write, format, open and save .docx",
+    "hint_slides": "PowerPoint-style presentations: design, present, open and save .pptx",
     "pipelines": "Pipelines",
     "hint_pipelines": "Bring source data into the lakehouse on a schedule, then clean and shape it",
     "hint_catalog": "Browse lakehouse tables, their schema, profile and lineage",
@@ -8509,7 +8513,12 @@
     "source_question": "Question: {question}",
     "source_rows": "Rows analysed: {rows}",
     "source_query": "Query used",
-    "more_formats": "More formats"
+    "more_formats": "More formats",
+    "open_in_docs": "Open in Docs",
+    "open_in_slides": "Open in Slides",
+    "open_in_docs_hint": "A new document in Aicser Docs with this report (charts as pictures), ready to edit and share",
+    "open_in_slides_hint": "New slides in Aicser Slides from this report, ready to edit and present",
+    "open_in_office_failed": "Couldn't open the report: {message}"
   },
   "scheduled_reports": {
     "load_failed": "Failed to load scheduled reports",

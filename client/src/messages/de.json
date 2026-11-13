@@ -6998,7 +6998,11 @@
     "hint_documents": "Dokumente, die Ask durchsuchen und als Quelle zitieren kann",
     "hint_warehouse": "Warehouse-Tabellen abfragen, mit Zeilensicherheit, Limits und Kostenkontrolle",
     "sheets": "Tabellen",
+    "docs": "Dokumente",
+    "slides": "Folien",
     "hint_sheets": "Excel-kompatible Tabellen mit Live-Daten",
+    "hint_docs": "Dokumente wie in Word: schreiben, formatieren, .docx öffnen und speichern",
+    "hint_slides": "Präsentationen wie in PowerPoint: gestalten, präsentieren, .pptx öffnen und speichern",
     "pipelines": "Pipelines",
     "hint_semantic_layer": "Offizielle Kennzahlen, Dimensionen und Tabellen-Joins (Stern & Schneeflocke) für Ask und Dashboards",
     "agent_tasks": "Automatisierungen",
@@ -8074,7 +8078,12 @@
     "source_question": "Frage: {question}",
     "source_rows": "Analysierte Zeilen: {rows}",
     "source_query": "Verwendete Abfrage",
-    "more_formats": "Weitere Formate"
+    "more_formats": "Weitere Formate",
+    "open_in_docs": "In Dokumente öffnen",
+    "open_in_slides": "In Folien öffnen",
+    "open_in_docs_hint": "Ein neues Dokument in Aicser-Dokumente mit diesem Bericht (Diagramme als Bilder), zum Bearbeiten und Teilen",
+    "open_in_slides_hint": "Neue Folien in Aicser-Folien aus diesem Bericht, zum Bearbeiten und Präsentieren",
+    "open_in_office_failed": "Bericht konnte nicht geöffnet werden: {message}"
   },
   "scheduled_reports": {
     "load_failed": "Laden der geplanten Berichte fehlgeschlagen",

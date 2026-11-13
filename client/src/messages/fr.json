@@ -6998,7 +6998,11 @@
     "hint_documents": "Les documents qu'Ask peut rechercher et citer comme sources",
     "hint_warehouse": "Interroger les tables de l'entrepôt avec sécurité par ligne, limites et maîtrise des coûts",
     "sheets": "Feuilles de calcul",
+    "docs": "Documents",
+    "slides": "Diapositives",
     "hint_sheets": "Feuilles de calcul compatibles Excel avec données en direct",
+    "hint_docs": "Documents comme dans Word : rédiger, mettre en forme, ouvrir et enregistrer des .docx",
+    "hint_slides": "Présentations comme dans PowerPoint : concevoir, présenter, ouvrir et enregistrer des .pptx",
     "pipelines": "Pipelines",
     "hint_semantic_layer": "Métriques, dimensions et jointures de tables officielles (étoile et flocon) pour Ask et les tableaux de bord",
     "agent_tasks": "Automatisations",
@@ -8074,7 +8078,12 @@
     "source_question": "Question : {question}",
     "source_rows": "Lignes analysées : {rows}",
     "source_query": "Requête utilisée",
-    "more_formats": "Autres formats"
+    "more_formats": "Autres formats",
+    "open_in_docs": "Ouvrir dans Documents",
+    "open_in_slides": "Ouvrir dans Diapositives",
+    "open_in_docs_hint": "Un nouveau document Aicser Documents avec ce rapport (graphiques en images), prêt à modifier et partager",
+    "open_in_slides_hint": "De nouvelles diapositives Aicser à partir de ce rapport, prêtes à modifier et présenter",
+    "open_in_office_failed": "Impossible d'ouvrir le rapport : {message}"
   },
   "scheduled_reports": {
     "load_failed": "Échec du chargement des rapports planifiés",
