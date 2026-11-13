@@ -7726,7 +7726,11 @@
     "hint_documents": "Tài liệu Ask có thể tìm và trích dẫn làm nguồn",
     "hint_warehouse": "Truy vấn bảng trong kho dữ liệu với bảo mật theo dòng, giới hạn và kiểm soát chi phí",
     "sheets": "Trang tính",
+    "docs": "Tài liệu",
+    "slides": "Trang chiếu",
     "hint_sheets": "Bảng tính tương thích Excel với dữ liệu trực tiếp",
+    "hint_docs": "Tài liệu như Word: soạn thảo, định dạng, mở và lưu .docx",
+    "hint_slides": "Bản trình bày như PowerPoint: thiết kế, trình chiếu, mở và lưu .pptx",
     "pipelines": "Pipelines",
     "hint_semantic_layer": "Chỉ số, chiều và liên kết bảng chính thống (ngôi sao & tuyết) cho Ask và dashboard",
     "agent_tasks": "Tự động hóa",
@@ -8890,7 +8894,12 @@
     "source_question": "Câu hỏi: {question}",
     "source_rows": "Số dòng đã phân tích: {rows}",
     "source_query": "Truy vấn đã dùng",
-    "more_formats": "Định dạng khác"
+    "more_formats": "Định dạng khác",
+    "open_in_docs": "Mở trong Tài liệu",
+    "open_in_slides": "Mở trong Trang chiếu",
+    "open_in_docs_hint": "Tài liệu mới trong Aicser Tài liệu từ báo cáo này (biểu đồ dạng hình ảnh), sẵn sàng chỉnh sửa và chia sẻ",
+    "open_in_slides_hint": "Trang chiếu mới trong Aicser Trang chiếu từ báo cáo này, sẵn sàng chỉnh sửa và trình chiếu",
+    "open_in_office_failed": "Không mở được báo cáo: {message}"
   },
   "scheduled_reports": {
     "load_failed": "Không thể tải báo cáo định kỳ",

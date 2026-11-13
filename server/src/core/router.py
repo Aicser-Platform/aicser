@@ -19,6 +19,7 @@ from src.modules.spatial.router import router as spatial_router
 from src.modules.folders.router import router as folders_router
 from src.modules.notebooks.router import router as notebooks_router
 from src.modules.workbooks.router import router as workbooks_router
+from src.modules.office_files.router import router as office_files_router
 from src.modules.prep.router import router as prep_router
 from src.modules.semantic_domains.router import router as semantic_domains_router
 from src.modules.governance.router import router as governance_router
@@ -72,6 +73,7 @@ api_router.include_router(spatial_router, prefix="/api/spatial", tags=["location
 api_router.include_router(folders_router, prefix="/api/folders", tags=["folders"])
 api_router.include_router(notebooks_router, prefix="/api/notebooks", tags=["notebooks"])
 api_router.include_router(workbooks_router, prefix="/api/workbooks", tags=["workbooks"])
+api_router.include_router(office_files_router, prefix="/api/office-files", tags=["docs and slides"])
 api_router.include_router(prep_router, prefix="/api/prep", tags=["prepare"])
 api_router.include_router(semantic_domains_router, prefix="/api/semantic-domains", tags=["semantic"])
 api_router.include_router(governance_router, prefix="/api/governance", tags=["governance"])

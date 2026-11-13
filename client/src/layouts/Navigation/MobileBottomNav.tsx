@@ -4,6 +4,8 @@ import { useOrgMenu } from '@/hooks/useOrgMenu';
 import React from 'react';
 import {
   AlertOutlined,
+  FilePptOutlined,
+  FileWordOutlined,
   ApartmentOutlined,
   AppstoreOutlined,
   CodeOutlined,
@@ -62,6 +64,8 @@ const MORE_ICONS: SidebarNavIconMap = {
   'query-editor': <CodeOutlined />,
   notebooks: <ReadOutlined />,
   sheets: <TableOutlined />,
+  docs: <FileWordOutlined />,
+  slides: <FilePptOutlined />,
   spatial: <EnvironmentOutlined />,
   models: <ExperimentOutlined />,
   'ai-decisions': <ThunderboltOutlined />,

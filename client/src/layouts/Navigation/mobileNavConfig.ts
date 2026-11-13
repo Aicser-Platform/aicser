@@ -50,6 +50,8 @@ export function enterpriseMoreNavItems(): NavItemDef[] {
     moreLink('chart-designer'),
     moreLink('query-editor'),
     moreLink('sheets'),
+    moreLink('docs'),
+    moreLink('slides'),
     moreLink('notebooks'),
     ...(MAPS_ENABLED ? [moreLink('spatial')] : []),
     { kind: 'divider' },
@@ -69,6 +71,8 @@ export function communityMoreNavItems(): NavItemDef[] {
   return [
     moreLink('chart-designer'),
     moreLink('sheets'),
+    moreLink('docs'),
+    moreLink('slides'),
     moreLink('notebooks'),
     ...(MAPS_ENABLED ? [moreLink('spatial')] : []),
     moreLink('prepare'),

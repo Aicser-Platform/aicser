@@ -21,7 +21,7 @@ describe('job-first navigation', () => {
     expect(top).toEqual(['chat', 'agents', 'feed', 'dashboards', 'alerts', 'agent']);
     const sections = items.filter((i) => i.kind === 'section').map((i) => i.kind === 'section' && [i.key, i.children.map((c) => c.key)]);
     expect(sections).toEqual([
-      ['sec-analyze', ['chart-designer', 'query-editor', 'sheets', 'notebooks']], // Maps is off by default (NEXT_PUBLIC_FEATURE_MAPS)
+      ['sec-analyze', ['chart-designer', 'query-editor', 'sheets', 'docs', 'slides', 'notebooks']], // Maps is off by default (NEXT_PUBLIC_FEATURE_MAPS)
       ['sec-predict', ['models', 'ai-decisions']],
       ['sec-data', ['data', 'prepare', 'pipelines', 'semantic-layer', 'catalog']],
     ]);
@@ -89,6 +89,8 @@ describe('job-first navigation', () => {
       'chart-designer',
       'query-editor',
       'sheets',
+      'docs',
+      'slides',
       'notebooks',
       'models',
       'ai-decisions',

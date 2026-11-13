@@ -6998,7 +6998,11 @@
     "hint_documents": "Documentos que Ask puede buscar y citar como fuente",
     "hint_warehouse": "Consulta tablas del warehouse con seguridad por filas, límites y control de coste",
     "sheets": "Hojas de cálculo",
+    "docs": "Documentos",
+    "slides": "Diapositivas",
     "hint_sheets": "Hojas de cálculo compatibles con Excel con datos en vivo",
+    "hint_docs": "Documentos como en Word: escribir, dar formato, abrir y guardar .docx",
+    "hint_slides": "Presentaciones como en PowerPoint: diseñar, presentar, abrir y guardar .pptx",
     "pipelines": "Pipelines",
     "agent_tasks": "Automatizaciones",
     "hint_agent": "Tareas, programaciones y habilidades guardadas",
@@ -8073,7 +8077,12 @@
     "source_question": "Pregunta: {question}",
     "source_rows": "Filas analizadas: {rows}",
     "source_query": "Consulta usada",
-    "more_formats": "Más formatos"
+    "more_formats": "Más formatos",
+    "open_in_docs": "Abrir en Documentos",
+    "open_in_slides": "Abrir en Diapositivas",
+    "open_in_docs_hint": "Un documento nuevo en Aicser Documentos con este informe (gráficos como imágenes), listo para editar y compartir",
+    "open_in_slides_hint": "Diapositivas nuevas en Aicser Diapositivas a partir de este informe, listas para editar y presentar",
+    "open_in_office_failed": "No se pudo abrir el informe: {message}"
   },
   "scheduled_reports": {
     "load_failed": "Error al cargar informes",

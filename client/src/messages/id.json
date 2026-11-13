@@ -6998,7 +6998,11 @@
     "hint_documents": "Dokumen yang bisa dicari dan dikutip Ask sebagai sumber",
     "hint_warehouse": "Kueri tabel warehouse dengan keamanan baris, batas, dan kendali biaya",
     "sheets": "Spreadsheet",
+    "docs": "Dokumen",
+    "slides": "Slide",
     "hint_sheets": "Spreadsheet kompatibel Excel dengan data langsung",
+    "hint_docs": "Dokumen seperti Word: tulis, format, buka dan simpan .docx",
+    "hint_slides": "Presentasi seperti PowerPoint: desain, presentasikan, buka dan simpan .pptx",
     "pipelines": "Pipelines",
     "agent_tasks": "Otomasi",
     "hint_agent": "Tugas, jadwal, dan keahlian tersimpan",
@@ -8073,7 +8077,12 @@
     "source_question": "Pertanyaan: {question}",
     "source_rows": "Baris dianalisis: {rows}",
     "source_query": "Kueri yang dipakai",
-    "more_formats": "Format lain"
+    "more_formats": "Format lain",
+    "open_in_docs": "Buka di Dokumen",
+    "open_in_slides": "Buka di Slide",
+    "open_in_docs_hint": "Dokumen baru di Aicser Dokumen dari laporan ini (grafik sebagai gambar), siap diedit dan dibagikan",
+    "open_in_slides_hint": "Slide baru di Aicser Slide dari laporan ini, siap diedit dan dipresentasikan",
+    "open_in_office_failed": "Laporan tidak dapat dibuka: {message}"
   },
   "scheduled_reports": {
     "load_failed": "Gagal memuat laporan terjadwal",

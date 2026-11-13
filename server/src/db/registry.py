@@ -60,6 +60,7 @@ from src.modules.user.api_keys import PlatformApiKey
 from src.modules.folders.models import AssetFolder
 from src.modules.notebooks.models import Notebook
 from src.modules.workbooks.models import Workbook, WorkbookComment, WorkbookVersion
+from src.modules.office_files.models import OfficeFile, OfficeFileShare, OfficeRemoteSession  # noqa: F401
 from src.modules.prep.models import PrepRecipe, PrepRecipeVersion  # noqa: F401
 from src.modules.semantic_domains.models import SemanticDomain, SemanticDomainSource  # noqa: F401
 
