@@ -556,19 +556,37 @@
 }
 
 html[data-theme='dark'] .dashboard-chart-tooltip,
-.dark .dashboard-chart-tooltip {
+html.dark .dashboard-chart-tooltip,
+body.dark .dashboard-chart-tooltip,
+.dark .dashboard-chart-tooltip,
+[data-theme='dark'] .dashboard-chart-tooltip {
   background: rgba(22, 27, 34, 0.97) !important;
   border: 1px solid #30363d !important;
   color: #e6edf3 !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
 }
 
+html[data-theme='dark'] .dashboard-chart-tooltip *,
+html.dark .dashboard-chart-tooltip *,
+body.dark .dashboard-chart-tooltip *,
+.dark .dashboard-chart-tooltip *,
+[data-theme='dark'] .dashboard-chart-tooltip * {
+  color: #e6edf3 !important;
+}
+
 html[data-theme='light'] .dashboard-chart-tooltip,
-:root:not([data-theme='dark']) .dashboard-chart-tooltip {
+html:not(.dark):not([data-theme='dark']) .dashboard-chart-tooltip,
+:root:not(.dark):not([data-theme='dark']) .dashboard-chart-tooltip {
   background: rgba(255, 255, 255, 0.98) !important;
   border: 1px solid #d0d7de !important;
   color: #24292f !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14) !important;
+}
+
+html[data-theme='light'] .dashboard-chart-tooltip *,
+html:not(.dark):not([data-theme='dark']) .dashboard-chart-tooltip *,
+:root:not(.dark):not([data-theme='dark']) .dashboard-chart-tooltip * {
+  color: #24292f !important;
 }
 
 .dark .widget-loading-overlay {

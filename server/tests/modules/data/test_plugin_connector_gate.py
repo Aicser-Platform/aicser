@@ -94,3 +94,81 @@ async def test_query_gate_tenant_isolation_org_b_stays_active():
     gate_err = await svc._check_plugin_connector_gate(source_dict, identity_b)
     assert gate_err is None
 
+
+@pytest.mark.asyncio
+async def test_test_connection_blocks_disabled_plugin():
+    from src.modules.data.services.database_connector_service import DatabaseConnectorService
+
+    connector_svc = DatabaseConnectorService()
+
+    disabled_row = PluginEnablement(scope_key="instance", plugin_id="snowflake", enabled=False)
+    mock_db = AsyncMock()
+    res = MagicMock()
+    res.scalar_one_or_none.return_value = disabled_row
+    mock_db.execute.return_value = res
+
+    config = {
+        "type": "snowflake",
+        "account": "xy12345.us-east-1",
+        "username": "user",
+        "password": "pwd",
+        "database": "DB",
+        "__db_session": mock_db,
+    }
+
+    out = await connector_svc.test_connection(config)
+    assert out["success"] is False
+    assert out.get("plugin_disabled") is True
+    assert "Snowflake" in out["error"]
+
+
+@pytest.mark.asyncio
+async def test_get_schema_blocks_disabled_plugin():
+    from src.modules.data.services.database_connector_service import DatabaseConnectorService
+
+    connector_svc = DatabaseConnectorService()
+
+    disabled_row = PluginEnablement(scope_key="instance", plugin_id="snowflake", enabled=False)
+    mock_db = AsyncMock()
+    res = MagicMock()
+    res.scalar_one_or_none.return_value = disabled_row
+    mock_db.execute.return_value = res
+
+    config = {
+        "type": "snowflake",
+        "account": "xy12345.us-east-1",
+        "username": "user",
+        "password": "pwd",
+        "database": "DB",
+        "__db_session": mock_db,
+    }
+
+    out = await connector_svc.get_schema(config)
+    assert out["success"] is False
+    assert out.get("plugin_disabled") is True
+    assert "Snowflake" in out["error"]
+
+
+@pytest.mark.asyncio
+async def test_assert_connector_active_raises_when_disabled():
+    from src.modules.plugins.service import (
+        PluginConnectorDisabledError,
+        assert_connector_active,
+    )
+
+    disabled_row = PluginEnablement(scope_key="instance", plugin_id="snowflake", enabled=False)
+    mock_db = AsyncMock()
+    res = MagicMock()
+    res.scalar_one_or_none.return_value = disabled_row
+    mock_db.execute.return_value = res
+
+    with pytest.raises(PluginConnectorDisabledError) as exc_info:
+        await assert_connector_active("snowflake", db=mock_db)
+
+    assert "Snowflake" in str(exc_info.value)
+    assert exc_info.value.plugin_id == "snowflake"
+    err_dict = exc_info.value.to_dict()
+    assert err_dict["success"] is False
+    assert err_dict["plugin_disabled"] is True
+
+

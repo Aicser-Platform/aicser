@@ -33,6 +33,57 @@ def test_ssrf_validator_blocks_loopback_and_private_ips(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dns_rebinding_mock_resolve_to_loopback_rejected(monkeypatch):
+    monkeypatch.setenv("ALLOW_PRIVATE_MCP_ENDPOINTS", "false")
+
+    # Mock getaddrinfo returning 127.0.0.1 for a public-looking domain name
+    fake_info = [(2, 1, 6, "", ("127.0.0.1", 443))]
+
+    from src.modules.plugins.mcp.client import McpClient, async_validate_mcp_host
+
+    with patch("socket.getaddrinfo", return_value=fake_info):
+        with pytest.raises(McpSSRFError) as exc_info:
+            validate_mcp_url("https://rebound-attack.example.com/mcp")
+        assert "non-public IP" in str(exc_info.value) or "127.0.0.1" in str(exc_info.value)
+
+    with patch("asyncio.get_running_loop") as mock_loop:
+        loop_instance = MagicMock()
+        loop_instance.getaddrinfo = AsyncMock(return_value=fake_info)
+        mock_loop.return_value = loop_instance
+
+        with pytest.raises(McpSSRFError) as exc_info_async:
+            await async_validate_mcp_host("rebound-attack.example.com", 443)
+        assert "non-public IP" in str(exc_info_async.value) or "127.0.0.1" in str(exc_info_async.value)
+
+
+@pytest.mark.asyncio
+async def test_mcp_client_redirect_to_metadata_ip_rejected(monkeypatch):
+    import httpx
+    from src.modules.plugins.mcp.client import McpClient
+
+    monkeypatch.setenv("ALLOW_PRIVATE_MCP_ENDPOINTS", "false")
+
+    class MockRedirectTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                302,
+                headers={"Location": "http://169.254.169.254/latest/meta-data/"},
+                request=request,
+            )
+
+    client = McpClient(
+        "https://8.8.8.8/mcp",
+        transport=MockRedirectTransport(),
+    )
+
+    with pytest.raises(McpSSRFError) as exc_info:
+        await client.list_tools()
+
+    assert "169.254.169.254" in str(exc_info.value)
+
+
+
+@pytest.mark.asyncio
 async def test_discover_org_mcp_skills_namespaces_and_marks_mutation(monkeypatch):
     monkeypatch.setenv("ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.setenv("ALLOW_PRIVATE_MCP_ENDPOINTS", "true")

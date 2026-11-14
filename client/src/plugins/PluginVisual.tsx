@@ -23,7 +23,11 @@ export function registerVisualModuleForTest(url: string, plugin: VisualPlugin): 
 export function loadVisualModule(url: string): Promise<VisualPlugin> {
   let cached = moduleCache.get(url);
   if (!cached) {
-    cached = import(/* webpackIgnore: true */ url).then((mod) => {
+    const importUrl =
+      process.env.NODE_ENV === 'development'
+        ? `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
+        : url;
+    cached = import(/* webpackIgnore: true */ importUrl).then((mod) => {
       const resolved = mod?.default ?? mod;
       if (!resolved || typeof resolved.mount !== 'function') {
         throw new Error(`Plug-in bundle at ${url} does not export a valid VisualPlugin with mount()`);
@@ -128,6 +132,7 @@ const PluginVisualInner: React.FC<PluginVisualProps> = ({
       attributes: true,
       attributeFilter: ['class', 'data-theme'],
     });
+    setDarkMode(isDark());
     return () => observer.disconnect();
   }, []);
 
@@ -141,25 +146,28 @@ const PluginVisualInner: React.FC<PluginVisualProps> = ({
 
   const normalizedData = useMemo(() => normalizeTabularData(data), [data]);
 
-  const buildContext = (el: HTMLElement): VisualContext => ({
-    container: el,
-    width: el.clientWidth || 400,
-    height: el.clientHeight || minHeight,
-    data: normalizedData,
-    options: config || {},
-    theme: {
-      mode: darkMode ? 'dark' : 'light',
-      palette,
-    },
-    t: (_key: string, defaultText?: string) => defaultText || _key,
-    format: {
-      number: (val: number, opts?: Intl.NumberFormatOptions) =>
-        Number(val ?? 0).toLocaleString(undefined, opts),
-      date: (val: Date | string | number, opts?: Intl.DateTimeFormatOptions) =>
-        new Date(val).toLocaleDateString(undefined, opts),
-    },
-    echarts,
-  });
+  const buildContext = (el: HTMLElement): VisualContext => {
+    const isCurrentDark = typeof document !== 'undefined' ? isDark() : darkMode;
+    return {
+      container: el,
+      width: el.clientWidth || 400,
+      height: el.clientHeight || minHeight,
+      data: normalizedData,
+      options: config || {},
+      theme: {
+        mode: isCurrentDark ? 'dark' : 'light',
+        palette,
+      },
+      t: (_key: string, defaultText?: string) => defaultText || _key,
+      format: {
+        number: (val: number, opts?: Intl.NumberFormatOptions) =>
+          Number(val ?? 0).toLocaleString(undefined, opts),
+        date: (val: Date | string | number, opts?: Intl.DateTimeFormatOptions) =>
+          new Date(val).toLocaleDateString(undefined, opts),
+      },
+      echarts,
+    };
+  };
 
   useEffect(() => {
     const el = containerRef.current;

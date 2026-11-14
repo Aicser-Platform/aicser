@@ -168,6 +168,16 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     () => activePluginsData?.visuals?.find((v) => v.chart_type.toLowerCase() === normalizedType),
     [activePluginsData?.visuals, normalizedType],
   );
+  const metricFormats = React.useMemo(
+    () => buildMetricFormats(query as Record<string, unknown>),
+    [query]
+  );
+  const chartConfig = React.useMemo(
+    () => Object.keys(metricFormats).length
+      ? { ...config, metricFormats: { ...(config?.metricFormats || {}), ...metricFormats } }
+      : config,
+    [config, metricFormats]
+  );
 
   if (disabledLabel !== undefined) {
     return (
@@ -207,16 +217,6 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   // (see the error-suppression branch below) — surface that quietly instead of
   // silently presenting stale data as if it were current.
   const isShowingStaleFallbackAfterError = Boolean(error) && !hasRenderableChartData(data) && hasRenderableChartData(prefetchedData);
-  const metricFormats = React.useMemo(
-    () => buildMetricFormats(query as Record<string, unknown>),
-    [query]
-  );
-  const chartConfig = React.useMemo(
-    () => Object.keys(metricFormats).length
-      ? { ...config, metricFormats: { ...(config?.metricFormats || {}), ...metricFormats } }
-      : config,
-    [config, metricFormats]
-  );
 
   // Frozen AI chat chart — render stored ECharts JSON directly (no SQL rebuild).
   // Prefer snapshot when live/prefetched data is missing or empty (failed SQL refresh).

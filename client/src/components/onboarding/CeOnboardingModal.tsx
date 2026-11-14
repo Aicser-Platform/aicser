@@ -99,7 +99,7 @@ export function CeOnboardingModal({ onConnectData }: CeOnboardingModalProps) {
       centered
       destroyOnHidden
       title={t('modal_title')}
-      maskClosable={false}
+      mask={{ closable: false }}
     >
       <Steps
         current={step}

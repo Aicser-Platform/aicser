@@ -177,21 +177,16 @@ class DatabaseConnectorService:
         try:
             db_type = config.get('type', '').lower()
 
-            from src.modules.plugins.registry import registry
             from src.modules.plugins import service as plugin_service
 
-            plugin_id = registry.get_plugin_id_for_db_type(db_type)
-            if plugin_id and db is not None:
-                scope_key = plugin_service.resolve_scope_key(organization_id)
-                is_active = await plugin_service.is_plugin_active(
-                    db, scope_key=scope_key, plugin_id=plugin_id, organization_id=organization_id
-                )
-                if not is_active:
-                    return {
-                        'success': False,
-                        'error': f"The '{plugin_id}' plug-in is not enabled",
-                        'plugin_disabled': True,
-                    }
+            effective_org = organization_id or config.get("organization_id") or config.get("org_id")
+            gate_error = await plugin_service.check_connector_active(
+                db_type=db_type,
+                db=db or config.get("__db_session"),
+                organization_id=effective_org,
+            )
+            if gate_error:
+                return gate_error
             
             if db_type not in self.database_configs:
                 return {
@@ -670,6 +665,16 @@ class DatabaseConnectorService:
         """Get database schema using appropriate method"""
         try:
             db_type = config.get('type', '').lower()
+            from src.modules.plugins import service as plugin_service
+
+            effective_org = config.get("organization_id") or config.get("org_id")
+            gate_error = await plugin_service.check_connector_active(
+                db_type=db_type,
+                db=config.get("__db_session"),
+                organization_id=effective_org,
+            )
+            if gate_error:
+                return gate_error
             
             logger.info(f"🔍 Getting schema for {db_type} database")
             

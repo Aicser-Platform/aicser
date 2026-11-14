@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.edition import is_ee_enabled
 from src.modules.data.utils.credentials import decrypt_text, encrypt_text
 from src.modules.plugins.manifest import (
     AISkillContribution,
@@ -35,8 +36,10 @@ INSTANCE_SCOPE_KEY = "instance"
 
 def resolve_scope_key(organization_id: Optional[str] = None) -> str:
     """Resolve scope key: organization UUID in EE, or 'instance' in CE."""
+    if not is_ee_enabled():
+        return INSTANCE_SCOPE_KEY
     org = (organization_id or "").strip()
-    if org and org.lower() != "ce":
+    if org and org.lower() != "ce" and org.lower() != INSTANCE_SCOPE_KEY:
         return org
     return INSTANCE_SCOPE_KEY
 
@@ -177,22 +180,119 @@ async def is_plugin_active(
         row = result.scalar_one_or_none()
         if row is not None:
             return bool(row.enabled)
-
-        from src.core.edition import is_ee_enabled
-
-        if scope_key != INSTANCE_SCOPE_KEY and not is_ee_enabled():
-            stmt_inst = select(PluginEnablement).where(
-                PluginEnablement.scope_key == INSTANCE_SCOPE_KEY,
-                PluginEnablement.plugin_id == manifest.id,
-            )
-            res_inst = await db.execute(stmt_inst)
-            row_inst = res_inst.scalar_one_or_none()
-            if row_inst is not None:
-                return bool(row_inst.enabled)
     except Exception as err:
         logger.warning("Error reading plugin_enablements for '%s': %s", plugin_id, err)
 
     return manifest.default_enabled
+
+
+class PluginConnectorDisabledError(Exception):
+    """Raised when a database connector plug-in is disabled or not installed."""
+
+    def __init__(self, message: str, plugin_id: Optional[str] = None):
+        super().__init__(message)
+        self.message = message
+        self.plugin_id = plugin_id
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "success": False,
+            "error": self.message,
+            "plugin_disabled": True,
+        }
+
+
+async def check_connector_active(
+    db_type: str,
+    identity: Optional[Any] = None,
+    db: Optional[AsyncSession] = None,
+    organization_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Enforce soft-disable gate (Installed ∧ Entitled ∧ Enabled) for a connector db_type.
+
+    Returns None if the connector is active, or an error dictionary if it is disabled
+    or not installed.
+    """
+    normalized_type = str(db_type or "").strip().lower()
+    from src.modules.plugins.registry import CORE_DB_TYPES, registry
+
+    if not normalized_type or normalized_type in CORE_DB_TYPES:
+        return None
+
+    plugin_id = registry.get_plugin_id_for_db_type(normalized_type)
+    if not plugin_id:
+        if normalized_type == "snowflake":
+            return {
+                "success": False,
+                "error": f"The '{normalized_type}' connector plug-in is not installed on this instance.",
+                "plugin_disabled": True,
+            }
+        return None
+
+    manifest = registry.get_manifest(plugin_id)
+    org_id = (
+        organization_id
+        or getattr(identity, "organization_id", None)
+        or getattr(identity, "org_id", None)
+    )
+    scope = resolve_scope_key(org_id)
+
+    try:
+        if db is not None:
+            is_active = await is_plugin_active(
+                db,
+                scope_key=scope,
+                plugin_id=plugin_id,
+                organization_id=org_id,
+            )
+        else:
+            from src.db.session import async_session
+
+            async with async_session() as session:
+                is_active = await is_plugin_active(
+                    session,
+                    scope_key=scope,
+                    plugin_id=plugin_id,
+                    organization_id=org_id,
+                )
+    except Exception as err:
+        logger.warning("Plug-in gate DB check failed for '%s': %s", plugin_id, err)
+        is_active = manifest.default_enabled if manifest else False
+
+    if not is_active:
+        plugin_name = manifest.name if manifest else plugin_id
+        return {
+            "success": False,
+            "error": (
+                f"The '{plugin_name}' plug-in is not enabled for your organization. "
+                "Contact your administrator to enable it."
+            ),
+            "plugin_disabled": True,
+        }
+
+    return None
+
+
+async def assert_connector_active(
+    db_type: str,
+    identity: Optional[Any] = None,
+    db: Optional[AsyncSession] = None,
+    organization_id: Optional[str] = None,
+) -> None:
+    """Assert that a connector plug-in is active; raises PluginConnectorDisabledError if disabled."""
+    gate_err = await check_connector_active(
+        db_type=db_type,
+        identity=identity,
+        db=db,
+        organization_id=organization_id,
+    )
+    if gate_err:
+        from src.modules.plugins.registry import registry
+
+        raise PluginConnectorDisabledError(
+            message=gate_err["error"],
+            plugin_id=registry.get_plugin_id_for_db_type(str(db_type or "").strip().lower()),
+        )
 
 
 async def get_active_contributions(

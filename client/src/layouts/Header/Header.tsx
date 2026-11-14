@@ -593,7 +593,7 @@ export const LayoutHeader: React.FC<Props> = ({
           title={t('create_organization')}
           open={createOrgModalOpen}
           closable={organizations.length > 0} // Only allow close if user already has an org
-          maskClosable={organizations.length > 0}
+          mask={{ closable: organizations.length > 0 }}
           onCancel={() => organizations.length > 0 && setCreateOrgModalOpen(false)}
           footer={null}
           width={500}

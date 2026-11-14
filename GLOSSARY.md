@@ -13,7 +13,7 @@ One capability a Plug-in adds: a Visual, a Connector, an AI Skill or an MCP Conn
 _Avoid_: Feature, module
 
 **Core**:
-Visuals and Connectors built into Aicser itself rather than shipped as Plug-ins (the eight basic chart types; PostgreSQL, MySQL, DuckDB).
+Visuals and Connectors built into Aicser itself rather than shipped as Plug-ins (the eight basic chart types and the Geo map; PostgreSQL, MySQL, DuckDB).
 _Avoid_: Built-in plug-in, native
 
 **Visual**:

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.edition import is_ee_enabled
 from src.db.session import get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.rbac.guard import require_permission
@@ -28,9 +29,11 @@ router = APIRouter()
 auth_scheme = JWTCookieBearer()
 
 
+ALLOWED_ADMIN_ROLES = {"admin", "owner", "superadmin", "system_admin"}
+
+
 def _extract_caller(
     current_token: Union[str, dict],
-    request: Optional[Request] = None,
 ) -> tuple[str, Optional[str], dict]:
     payload = current_token if isinstance(current_token, dict) else {}
     user_id = str(
@@ -39,16 +42,131 @@ def _extract_caller(
         or payload.get("sub")
         or (current_token if isinstance(current_token, str) else "")
     )
-    org_id = str(payload.get("organization_id") or payload.get("org_id") or "").strip() or None
-    if not org_id and request is not None:
-        header_org = (
+    token_org_id = str(payload.get("organization_id") or payload.get("org_id") or "").strip() or None
+    return user_id, token_org_id, payload
+
+
+async def _check_user_org_membership(
+    user_id: str,
+    organization_id: str,
+    db: Optional[AsyncSession] = None,
+) -> bool:
+    if not user_id or not organization_id:
+        return False
+    try:
+        import uuid as _uuid
+        from sqlalchemy import and_, select
+        from src.modules.authentication.rbac.models import UserRole
+
+        uid = _uuid.UUID(str(user_id))
+        oid = _uuid.UUID(str(organization_id))
+        stmt = (
+            select(UserRole.id)
+            .where(
+                and_(
+                    UserRole.user_id == uid,
+                    UserRole.organization_id == oid,
+                    UserRole.is_active == True,
+                    UserRole.is_deleted == False,
+                )
+            )
+            .limit(1)
+        )
+        if db is not None:
+            res = await db.execute(stmt)
+            return res.scalar_one_or_none() is not None
+        else:
+            from src.db.session import async_session
+
+            async with async_session() as session:
+                res = await session.execute(stmt)
+                return res.scalar_one_or_none() is not None
+    except Exception as err:
+        logger.warning(
+            "Org membership check failed for user %s, org %s: %s",
+            user_id,
+            organization_id,
+            err,
+        )
+        return False
+
+
+async def _lookup_user_default_org(
+    user_id: str,
+    db: Optional[AsyncSession] = None,
+) -> Optional[str]:
+    if not user_id:
+        return None
+    try:
+        import uuid as _uuid
+        from sqlalchemy import and_, select
+        from src.modules.authentication.rbac.models import UserRole
+
+        uid = _uuid.UUID(str(user_id))
+        stmt = (
+            select(UserRole.organization_id)
+            .where(
+                and_(
+                    UserRole.user_id == uid,
+                    UserRole.organization_id.isnot(None),
+                    UserRole.is_active == True,
+                    UserRole.is_deleted == False,
+                )
+            )
+            .limit(1)
+        )
+        if db is not None:
+            res = await db.execute(stmt)
+            val = res.scalar_one_or_none()
+            return str(val) if val else None
+        else:
+            from src.db.session import async_session
+
+            async with async_session() as session:
+                res = await session.execute(stmt)
+                val = res.scalar_one_or_none()
+                return str(val) if val else None
+    except Exception as err:
+        logger.warning("Org lookup failed for user %s: %s", user_id, err)
+        return None
+
+
+async def _resolve_caller_org(
+    user_id: str,
+    payload: dict,
+    request: Optional[Request] = None,
+    db: Optional[AsyncSession] = None,
+) -> Optional[str]:
+    if not is_ee_enabled():
+        return None
+
+    token_org = str(payload.get("organization_id") or payload.get("org_id") or "").strip() or None
+
+    header_org = None
+    if request is not None:
+        raw_header = (
             request.headers.get("X-Organization-Id")
             or request.headers.get("x-organization-id")
             or request.query_params.get("organization_id")
         )
-        if header_org:
-            org_id = str(header_org).strip() or None
-    return user_id, org_id, payload
+        if raw_header:
+            header_org = str(raw_header).strip() or None
+
+    if header_org:
+        if token_org and token_org == header_org:
+            return token_org
+        is_member = await _check_user_org_membership(user_id, header_org, db)
+        if not is_member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"User is not a member of organization '{header_org}'",
+            )
+        return header_org
+
+    if token_org:
+        return token_org
+
+    return await _lookup_user_default_org(user_id, db)
 
 
 async def _require_plugin_admin(
@@ -69,10 +187,14 @@ async def _require_plugin_admin(
             role_val = res.scalar_one_or_none()
             if isinstance(role_val, str):
                 explicit_role = role_val.strip().lower()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Failed to query user role for user '%s': %s", user_id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Could not verify administrator permissions",
+            )
 
-    if explicit_role in ("viewer", "member", "guest", "readonly"):
+    if explicit_role not in ALLOWED_ADMIN_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator permission required to manage plug-ins",
@@ -104,7 +226,8 @@ async def get_active_plugins(
     db: AsyncSession = Depends(get_async_session),
 ) -> ActivePluginsResponse:
     """Return all Active plug-in contributions and soft-disabled chart/db types for the caller."""
-    _, org_id, _ = _extract_caller(current_token, request)
+    user_id, _, payload = _extract_caller(current_token)
+    org_id = await _resolve_caller_org(user_id, payload, request=request, db=db)
     scope_key = service.resolve_scope_key(org_id)
     return await service.get_active_contributions(db, scope_key=scope_key, organization_id=org_id)
 
@@ -116,7 +239,8 @@ async def list_plugins(
     db: AsyncSession = Depends(get_async_session),
 ) -> List[PluginStateResponse]:
     """List all Installed plug-ins with Entitled, Enabled, and Active states (admin only)."""
-    user_id, org_id, payload = _extract_caller(current_token, request)
+    user_id, _, payload = _extract_caller(current_token)
+    org_id = await _resolve_caller_org(user_id, payload, request=request, db=db)
     await _require_plugin_admin(user_id, org_id, payload, db=db)
     scope_key = service.resolve_scope_key(org_id)
     return await service.get_plugin_states(db, scope_key=scope_key, organization_id=org_id)
@@ -131,7 +255,8 @@ async def update_plugin_enablement(
     db: AsyncSession = Depends(get_async_session),
 ) -> PluginStateResponse:
     """Enable or disable an Installed plug-in for the caller's organization/instance (admin only)."""
-    user_id, org_id, payload = _extract_caller(current_token, request)
+    user_id, _, payload = _extract_caller(current_token)
+    org_id = await _resolve_caller_org(user_id, payload, request=request, db=db)
     await _require_plugin_admin(user_id, org_id, payload, db=db)
 
     manifest = registry.get_manifest(plugin_id)

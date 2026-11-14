@@ -75,11 +75,18 @@ const plugin = {
         itemStyle: { color: palette[i % palette.length] },
       }));
       const grand = links.reduce((sum, l) => sum + l.value, 0);
-      const isDark = theme.mode === 'dark';
+      const isDark =
+        theme.mode === 'dark' ||
+        (typeof document !== 'undefined' &&
+          (document.documentElement.classList.contains('dark') ||
+            document.documentElement.getAttribute('data-theme') === 'dark' ||
+            document.body?.classList.contains('dark') ||
+            document.body?.getAttribute('data-theme') === 'dark'));
       const textColor = isDark ? '#cbd5e1' : '#475569';
-      const tooltipBg = isDark ? 'rgba(22, 27, 34, 0.95)' : 'rgba(255, 255, 255, 0.98)';
+      const tooltipBg = isDark ? 'rgba(22, 27, 34, 0.97)' : 'rgba(255, 255, 255, 0.98)';
       const tooltipBorder = isDark ? '#30363d' : '#d0d7de';
       const tooltipTextColor = isDark ? '#e6edf3' : '#24292f';
+      const tooltipSubColor = isDark ? '#8b949e' : '#57606a';
 
       try {
         chart.setOption(
@@ -100,15 +107,15 @@ const plugin = {
                 fontSize: 12,
                 lineHeight: 18,
               },
-              extraCssText: `box-shadow: 0 4px 14px rgba(0,0,0,${isDark ? '0.45' : '0.14'}); z-index: 99999 !important; pointer-events: none;`,
+              extraCssText: `background-color: ${tooltipBg} !important; border-color: ${tooltipBorder} !important; color: ${tooltipTextColor} !important; box-shadow: 0 8px 24px rgba(0,0,0,${isDark ? '0.45' : '0.14'}); z-index: 99999 !important; pointer-events: none;`,
               formatter: (p) => {
                 if (p?.dataType === 'edge' && p?.data) {
                   const val = Number(p.data.value || 0);
                   const pct = grand > 0 ? `${((val / grand) * 100).toFixed(1)}%` : '–';
-                  return `${esc(shownName(p.data.source))} → ${esc(shownName(p.data.target))}<br/><strong>${esc(fmt(val))}</strong> · ${pct} of total`;
+                  return `<div style="color:${tooltipTextColor};">${esc(shownName(p.data.source))} &rarr; ${esc(shownName(p.data.target))}<br/><strong style="color:${tooltipTextColor};">${esc(fmt(val))}</strong> <span style="color:${tooltipSubColor};">&middot; ${pct} of total</span></div>`;
                 }
                 const total = totals.get(p?.name || '') || 0;
-                return `${esc(shownName(p?.name || ''))}<br/><strong>${esc(fmt(total))}</strong>`;
+                return `<div style="color:${tooltipTextColor};">${esc(shownName(p?.name || ''))}<br/><strong style="color:${tooltipTextColor};">${esc(fmt(total))}</strong></div>`;
               },
             },
             series: [

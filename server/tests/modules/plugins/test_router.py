@@ -97,6 +97,137 @@ def test_admin_endpoints_reject_unauthorized_viewer(plugin_test_app: FastAPI):
     resp = client.get("/api/plugins")
     assert resp.status_code == 403
 
+    resp_put = client.put("/api/plugins/sankey/enablement", json={"enabled": False})
+    assert resp_put.status_code == 403
+
+
+def test_admin_endpoints_reject_editor_and_allow_admin(plugin_test_app: FastAPI):
+    mock_db = AsyncMock()
+    res = MagicMock()
+    res.scalars.return_value.all.return_value = []
+    res.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = res
+
+    plugin_test_app.dependency_overrides[get_async_session] = lambda: mock_db
+
+    # Editor / standard user role is rejected with 403
+    for editor_role in ("user", "editor"):
+        plugin_test_app.dependency_overrides[auth_scheme] = lambda r=editor_role: {
+            "id": "u-editor",
+            "role": r,
+        }
+        client = TestClient(plugin_test_app)
+        resp_get = client.get("/api/plugins")
+        assert resp_get.status_code == 403
+
+        resp_put = client.put("/api/plugins/sankey/enablement", json={"enabled": False})
+        assert resp_put.status_code == 403
+
+    # Admin role is allowed with 200
+    plugin_test_app.dependency_overrides[auth_scheme] = lambda: {
+        "id": "u-admin",
+        "role": "admin",
+    }
+    client = TestClient(plugin_test_app)
+    resp_admin = client.get("/api/plugins")
+    assert resp_admin.status_code == 200
+
+
+def test_org_scope_header_spoofing_rejected_with_403(plugin_test_app: FastAPI, monkeypatch):
+    monkeypatch.setenv("AISER_EDITION", "enterprise")
+    monkeypatch.setenv("AISER_EDITION_LICENSE_KEY", "ee-test-license")
+
+    mock_db = AsyncMock()
+    # Mock membership check to return False for org-b
+    with patch("src.modules.plugins.router._check_user_org_membership", new=AsyncMock(return_value=False)):
+        plugin_test_app.dependency_overrides[get_async_session] = lambda: mock_db
+        plugin_test_app.dependency_overrides[auth_scheme] = lambda: {
+            "id": "u-org-a",
+            "organization_id": "org-a",
+            "role": "admin",
+        }
+
+        client = TestClient(plugin_test_app)
+        # Attempt to spoof org-b via header
+        resp = client.get("/api/plugins/active", headers={"X-Organization-Id": "org-b"})
+        assert resp.status_code == 403
+        assert "not a member" in resp.json()["detail"]
+
+
+def test_active_endpoint_resolves_default_org_when_not_in_token(plugin_test_app: FastAPI, monkeypatch):
+    monkeypatch.setenv("AISER_EDITION", "enterprise")
+    monkeypatch.setenv("AISER_EDITION_LICENSE_KEY", "ee-test-license")
+
+    mock_db = AsyncMock()
+    res = MagicMock()
+    res.scalars.return_value.all.return_value = []
+    res.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = res
+
+    with patch("src.modules.plugins.router._lookup_user_default_org", new=AsyncMock(return_value="org-own-123")):
+        plugin_test_app.dependency_overrides[get_async_session] = lambda: mock_db
+        plugin_test_app.dependency_overrides[auth_scheme] = lambda: {
+            "id": "u-no-org-token",
+            "role": "user",
+        }
+
+        client = TestClient(plugin_test_app)
+        resp = client.get("/api/plugins/active")
+        assert resp.status_code == 200
+        # Active plugins endpoint returns active plugins for the user's resolved org
+        assert "sankey" in resp.json()["active_plugins"]
+
+
+def test_ce_scope_consistent_with_org_in_token(plugin_test_app: FastAPI, monkeypatch):
+    monkeypatch.setenv("AISER_EDITION", "community")
+    monkeypatch.delenv("AISER_EDITION_LICENSE_KEY", raising=False)
+
+    stored_rows = []
+    mock_db = AsyncMock()
+    mock_db.add = MagicMock()
+
+    async def fake_execute(stmt):
+        res = MagicMock()
+        res.scalars.return_value.all.return_value = list(stored_rows)
+        res.scalar_one_or_none.return_value = stored_rows[0] if stored_rows else None
+        return res
+
+    def fake_add(row):
+        stored_rows.clear()
+        stored_rows.append(row)
+
+    mock_db.execute.side_effect = fake_execute
+    mock_db.add.side_effect = fake_add
+
+    plugin_test_app.dependency_overrides[get_async_session] = lambda: mock_db
+    # Token carrying an organization_id in CE mode
+    plugin_test_app.dependency_overrides[auth_scheme] = lambda: {
+        "id": "u-ce-admin",
+        "organization_id": "00000000-0000-0000-0000-000000000001",
+        "role": "admin",
+    }
+
+    client = TestClient(plugin_test_app)
+
+    # Disable sankey via PUT
+    put_resp = client.put("/api/plugins/sankey/enablement", json={"enabled": False})
+    assert put_resp.status_code == 200
+    assert stored_rows[0].scope_key == "instance"
+    assert put_resp.json()["enabled"] is False
+
+    # GET /api/plugins returns disabled
+    list_resp = client.get("/api/plugins")
+    assert list_resp.status_code == 200
+    sankey_item = next(p for p in list_resp.json() if p["id"] == "sankey")
+    assert sankey_item["enabled"] is False
+
+    # GET /api/plugins/active returns sankey as disabled
+    active_resp = client.get("/api/plugins/active")
+    assert active_resp.status_code == 200
+    assert "sankey" not in active_resp.json()["active_plugins"]
+    assert "sankey" in active_resp.json()["disabled_chart_types"]
+
+
 
 def test_admin_enablement_toggle_and_active_endpoint(plugin_test_app: FastAPI):
     stored_rows = []
