@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { DashboardIcon } from '../icons';
 import { formatStatValue } from '../utils/numberFormatter';
+import { kpiLabelSize, useKpiValueSize } from './useKpiValueSize';
 import { useTranslations } from 'next-intl';
 import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { getColorsFromPalette } from './WidgetRendererConfig';
@@ -325,6 +326,40 @@ function TrendBadge({
   );
 }
 
+/**
+ * The number's style. The app-wide type scale sets every h2's size and colour with !important, which
+ * beat the inline size (KPI numbers stayed at 24px whatever the card). The same values also go in as
+ * CSS variables that `h2.studio-stat-value` (dashboard-grid.css) applies over that scale.
+ */
+function kpiValueStyle(px: number, color: string | undefined): React.CSSProperties {
+  return {
+    margin: 0, fontSize: px, fontWeight: 700, color, lineHeight: 1.1,
+    ['--kpi-value-size' as string]: `${px}px`,
+    ...(color ? { ['--kpi-value-color' as string]: color } : {}),
+  } as React.CSSProperties;
+}
+
+/** One inset for every layout: lines the KPI up with the card title and source line (both 12px). */
+const KPI_PADDING = '12px';
+const KPI_PADDING_DENSE = '6px 12px';
+
+/** The KPI's label, the same in every layout that shows one: up to two lines, wrapping between words. */
+function kpiLabelStyle(px: number, color = 'var(--ant-color-text-secondary)'): React.CSSProperties {
+  return {
+    fontSize: px,
+    fontWeight: 500,
+    lineHeight: 1.3,
+    color,
+    maxWidth: '100%',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    wordBreak: 'normal',
+    overflowWrap: 'normal',
+  };
+}
+
 export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, filterValue, query }) => {
   const t = useTranslations('stat_widget');
 
@@ -377,11 +412,11 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
   }
 
   const {
-    format = 'number',
+    format: configuredFormat,
     trendValue = '',
     showTrend,
     trendLabel = '',
-    fontSize = 32,
+    fontSize: explicitFontSize,
     showSparkline = false,
     sparklineType = 'line',
     sparklineColor,
@@ -390,6 +425,16 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
     statUnit,
     currencySymbol,
   } = config;
+
+  // The format chosen in Format (valueFormat) or on the metric counts too — before, only `format` did,
+  // so "Percent" in the Format tab left a rate showing as 0.11.
+  const formatFromChoice = (v: unknown): 'currency' | 'percent' | undefined =>
+    v === 'percent' ? 'percent' : v === 'currency' ? 'currency' : undefined;
+  const format: 'currency' | 'percent' | 'number' =
+    configuredFormat ||
+    formatFromChoice((config as { valueFormat?: unknown }).valueFormat) ||
+    formatFromChoice((query as { yMetrics?: Array<{ valueFormat?: unknown }> } | undefined)?.yMetrics?.[0]?.valueFormat) ||
+    'number';
 
   const accent = resolveStatAccent(config);
   const trendVisible = showTrend !== false;
@@ -474,6 +519,10 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
     trendLabel || formatComparisonCaption(comparisonLabel || config.comparisonPeriodLabel);
   const sparkColor = sparklineColor || accent;
   const hasSpark = showSparkline && sparklineValues.length >= 2;
+  // One size rule for every surface: the number fits the card it is in (see useKpiValueSize).
+  const { ref: sizeRef, valuePx: fittedPx } = useKpiValueSize(String(formattedValue).length, hasSpark ? 0.34 : 0.42);
+  const valuePx = explicitFontSize ? Number(explicitFontSize) : fittedPx;
+  const labelPx = kpiLabelSize(valuePx);
 
   const clickable = typeof onFilter === 'function';
   const clickValue =
@@ -523,8 +572,9 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
 
     return (
       <div
+        ref={sizeRef}
         {...interactiveProps}
-        className="studio-stat-root studio-stat-executive text-white"
+        className="studio-stat-root studio-stat-surface studio-stat-executive text-white"
         aria-label={ariaLabel}
         style={{
           // The headline number is the one thing a KPI card must never truncate: size it to the
@@ -535,7 +585,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
-          padding: '14px 16px 12px',
+          padding: KPI_PADDING,
           background: cardColor,
           color: '#ffffff',
           borderRadius: 6,
@@ -545,59 +595,50 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           ...(interactiveProps.style || {}),
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, flex: '1 1 auto' }}>
-          <div
-            className="studio-stat-executive-icon"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(255,255,255,0.16)',
-              color: '#ffffff',
-              flex: '0 0 auto',
-              fontSize: 16,
-            }}
-            aria-hidden
-          >
-            {resolveKpiIcon(config.icon, config.iconName, displayTitle, format)}
-          </div>
-          <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: '1 1 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <div
-              role="heading"
-              aria-level={2}
-              className={`${valueClass} studio-stat-executive-value text-white`}
+              className="studio-stat-executive-icon"
               style={{
-                margin: 0,
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(255,255,255,0.16)',
                 color: '#ffffff',
-                fontSize: `clamp(18px, 13cqw, ${Math.min(Math.max(fontSize, 24), 32)}px)`,
-                whiteSpace: 'nowrap',
-                fontWeight: 800,
-                lineHeight: 1.1,
+                flex: '0 0 auto',
+                fontSize: 14,
               }}
+              aria-hidden
             >
-              <span aria-live="polite" title={formattedValue} style={{ color: '#ffffff' }}>{formattedValue}</span>
+              {resolveKpiIcon(config.icon, config.iconName, displayTitle, format)}
             </div>
-            <div
-              className="studio-stat-label studio-stat-executive-label text-white/90"
-              style={{
-                color: 'rgba(255,255,255,0.9)',
-                fontSize: 13,
-                fontWeight: 500,
-                lineHeight: 1.3,
-                whiteSpace: 'normal',
-                overflow: 'visible',
-                // Wrap between words only ("Outstanding", never "Outstand / ing").
-                wordBreak: 'normal',
-                overflowWrap: 'normal',
-                hyphens: 'auto',
-              }}
-              title={titleLabel}
-            >
-              {titleLabel}
-            </div>
+            {titleLabel ? (
+              <div
+                className="studio-stat-label studio-stat-executive-label text-white/90"
+                style={kpiLabelStyle(labelPx, 'rgba(255,255,255,0.9)')}
+                title={titleLabel}
+              >
+                {titleLabel}
+              </div>
+            ) : null}
+          </div>
+          <div
+            role="heading"
+            aria-level={2}
+            className={`${valueClass} studio-stat-executive-value text-white`}
+            style={{
+              margin: 0,
+              color: '#ffffff',
+              fontSize: valuePx,
+              whiteSpace: 'nowrap',
+              fontWeight: 700,
+              lineHeight: 1.1,
+            }}
+          >
+            <span aria-live="polite" title={formattedValue} style={{ color: '#ffffff' }}>{formattedValue}</span>
           </div>
         </div>
 
@@ -654,14 +695,17 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
   if (layout === 'tile') {
     return (
       <div
+        ref={sizeRef}
         {...interactiveProps}
+        className="studio-stat-root studio-stat-surface studio-stat-tile"
         aria-label={ariaLabel}
         style={{
           height: '100%',
+          boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          padding: '14px 16px',
+          padding: KPI_PADDING,
           background: withAlpha(accent, 0.1),
           border: `1px solid ${withAlpha(accent, 0.28)}`,
           borderRadius: 6,
@@ -669,24 +713,13 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           ...(interactiveProps.style || {}),
         }}
       >
-        <Text
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            color: 'var(--ant-color-text-secondary)',
-            maxWidth: '100%',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={titleLabel}
-        >
-          {titleLabel}
-        </Text>
+        {titleLabel ? (
+          <Text className="studio-stat-label" style={kpiLabelStyle(labelPx)} title={titleLabel}>
+            {titleLabel}
+          </Text>
+        ) : null}
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-          <Title level={2} className={valueClass} style={{ margin: 0, fontSize: `${fontSize}px`, fontWeight: 700, color: valueColor, lineHeight: 1.1 }}>
+          <Title level={2} className={valueClass} style={kpiValueStyle(valuePx, valueColor)}>
             <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
           </Title>
           {showTrendUi ? <TrendBadge value={computedTrendValue} isUp={trendIsPositive} isGood={trendIsGood} /> : null}
@@ -712,6 +745,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
   if (layout === 'split') {
     return (
       <div
+        ref={sizeRef}
         {...interactiveProps}
         aria-label={ariaLabel}
         style={{
@@ -720,7 +754,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 16,
-          padding: '8px 16px 8px 12px',
+          padding: KPI_PADDING,
           ...(interactiveProps.style || {}),
         }}
       >
@@ -728,7 +762,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           <Title
             level={2}
             className={valueClass}
-            style={{ margin: 0, fontSize: `${Math.min(fontSize, 30)}px`, fontWeight: 700, color: valueColor, lineHeight: 1.1 }}
+            style={kpiValueStyle(Math.round(valuePx * 0.8), valueColor)}
           >
             <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
           </Title>
@@ -759,6 +793,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
   if (layout === 'compact') {
     return (
       <div
+        ref={sizeRef}
         {...interactiveProps}
         aria-label={ariaLabel}
         style={{
@@ -767,7 +802,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 10,
-          padding: '4px 12px',
+          padding: KPI_PADDING_DENSE,
           ...(interactiveProps.style || {}),
         }}
       >
@@ -775,7 +810,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           <Title
             level={2}
             className={valueClass}
-            style={{ margin: 0, fontSize: `${Math.min(fontSize, 26)}px`, fontWeight: 700, color: valueColor, lineHeight: 1.1 }}
+            style={kpiValueStyle(Math.round(Math.min(valuePx * 0.7, 40)), valueColor)}
           >
             <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
           </Title>
@@ -799,6 +834,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
 
   return (
     <div
+      ref={sizeRef}
       {...interactiveProps}
       aria-label={ariaLabel}
       style={{
@@ -806,34 +842,19 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        // Value lines up with the card title (12px); no side stripe - it sat on this inner area,
-        // not the card, so it never matched the card's edge or height.
-        padding: isCentered ? '12px 16px' : '8px 16px 8px 12px',
+        // Value lines up with the card title (12px).
+        padding: KPI_PADDING,
         textAlign: isCentered ? 'center' : 'left',
         alignItems: isCentered ? 'center' : 'flex-start',
         gap: 4,
         ...(interactiveProps.style || {}),
       }}
     >
-      {isCentered && (
-        <Text
-          type="secondary"
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            marginBottom: 2,
-            maxWidth: '100%',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={titleLabel}
-        >
+      {isCentered && titleLabel ? (
+        <Text className="studio-stat-label" style={kpiLabelStyle(labelPx)} title={titleLabel}>
           {titleLabel}
         </Text>
-      )}
+      ) : null}
 
       <div
         style={{
@@ -847,7 +868,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
         <Title
           level={2}
           className={valueClass}
-          style={{ margin: 0, fontSize: `${fontSize}px`, fontWeight: 700, color: valueColor || undefined, lineHeight: 1.1 }}
+          style={kpiValueStyle(valuePx, valueColor || undefined)}
         >
           <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
         </Title>

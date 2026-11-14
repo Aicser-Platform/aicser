@@ -1,0 +1,1 @@
+export { PricingModalEE } from '@/ee';

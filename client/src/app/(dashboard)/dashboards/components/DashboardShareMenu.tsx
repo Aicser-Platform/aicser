@@ -22,6 +22,7 @@ import { useTranslations } from 'next-intl';
 import { chartService } from '../services/chartService';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { EmbedDialog } from '@/components/embed/EmbedDialog';
+import { ShareDialog } from '@/components/share/ShareDialog';
 import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 
 type Props = {
@@ -69,12 +70,8 @@ export function DashboardShareMenu({
   const t = useTranslations('dashboards');
   const tt = useTranslations('dashboard_tabs');
   const [embedOpen, setEmbedOpen] = useState(false);
-
-  const copyLink = async () => {
-    const url = buildShareUrl();
-    await navigator.clipboard.writeText(url);
-    message.success(t('share_link_copied'));
-  };
+  const [shareOpen, setShareOpen] = useState(false);
+  const tShare = useTranslations('share_links');
 
   const showEmbed = () => {
     if (dashboardId) setEmbedOpen(true);
@@ -96,10 +93,11 @@ export function DashboardShareMenu({
 
   const items: MenuProps['items'] = [
     {
-      key: 'link',
+      key: 'share',
       icon: <LinkOutlined />,
-      label: t('share_copy_link'),
-      onClick: () => void copyLink(),
+      label: tShare('open'),
+      disabled: !dashboardId,
+      onClick: () => setShareOpen(true),
     },
     ...(onPreview
       ? [
@@ -117,7 +115,8 @@ export function DashboardShareMenu({
       label: t('share_embed_snippet'),
       onClick: showEmbed,
     },
-    ...(isEditMode && dashboardId
+    // Dashboards made public before share links: this closes them. New sharing is in the dialog.
+    ...(isEditMode && dashboardId && isPublic
       ? [
           {
             key: 'public-access',
@@ -127,11 +126,15 @@ export function DashboardShareMenu({
               void (async () => {
                 try {
                   const next = !isPublic;
-                  await chartService.publishDashboardAccess(dashboardId, next);
+                  const res = await chartService.publishDashboardAccess(dashboardId, next);
+                  if (next && res?.is_public === false) {
+                    message.info(t('public_sent_for_approval'));
+                    return;
+                  }
                   onPublicAccessChange?.(next);
                   message.success(next ? t('made_public') : t('made_private'));
-                } catch {
-                  message.error(t('public_access_failed'));
+                } catch (err) {
+                  message.error(err instanceof Error && err.message ? err.message : t('public_access_failed'));
                 }
               })();
             },
@@ -211,11 +214,22 @@ export function DashboardShareMenu({
     <>
       <Dropdown menu={{ items }} trigger={['click']}>
         <Tooltip title={t('share_tooltip')}>
-          <Button icon={<ShareAltOutlined />} disabled={!dashboardId} loading={exportBusy}>
+          <Button data-guide="publish-insight" icon={<ShareAltOutlined />} disabled={!dashboardId} loading={exportBusy}>
             {t('share')}
           </Button>
         </Tooltip>
       </Dropdown>
+      <ShareDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        kind="dashboard"
+        resourceId={dashboardId}
+        title={dashboardName || ''}
+        onAdvancedEmbed={() => {
+          setShareOpen(false);
+          showEmbed();
+        }}
+      />
       <EmbedDialog
         open={embedOpen}
         onClose={() => setEmbedOpen(false)}

@@ -218,7 +218,7 @@ const nextConfig = {
     },
   },
 
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, webpack }) => {
     config.resolve.extensionAlias = {
       '.js': ['.js', '.ts', '.tsx'],
       '.jsx': ['.jsx', '.tsx'],
@@ -244,13 +244,28 @@ const nextConfig = {
       'antd/lib/typography/Base/Ellipsis.js': path.resolve(process.cwd(), 'src/patches/antd-safe-ellipsis.tsx'),
     };
 
+    // The @/ee barrel re-exports every Enterprise page. Its modules run nothing on import, so saying
+    // so lets webpack skip the barrel, and src/ee-lazy/* gives each page only what it uses.
+    if (!isServer) {
+      config.module.rules.push({ test: /ee[\\/]src[\\/]ee[\\/].*\.tsx?$/, sideEffects: false });
+    }
+
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
         net: false,
         tls: false,
+        https: false,
       };
+      // pptxgenjs (Slides .pptx export) loads node:fs / node:https only when it runs in Node; its package maps
+      // them to false for browsers, but webpack rejects the `node:` scheme before that applies. Drop the scheme
+      // so the fallbacks above resolve them to empty modules.
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:(fs|https)$/, (resource) => {
+          resource.request = resource.request.replace(/^node:/, '');
+        }),
+      );
 
       try {
         config.resolve.alias['@sentry/nextjs'] = require.resolve(

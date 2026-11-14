@@ -1,0 +1,75 @@
+.guide-list { display: flex; flex-direction: column; gap: 2px; width: 260px; }
+.guide-list__row {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px;
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.guide-list__row:hover:not(:disabled) { background: var(--ant-color-fill-tertiary); }
+.guide-list__row:focus-visible { outline: 2px solid var(--ant-color-primary); outline-offset: 1px; }
+.guide-list__row--done { color: var(--ant-color-text-tertiary); cursor: default; }
+.guide-list__row--done .anticon { color: var(--ant-color-success); }
+.guide-list__row--next { font-weight: 500; }
+.guide-list__dot { width: 14px; height: 14px; border: 1.5px solid var(--ant-color-border); border-radius: 50%; flex: none; }
+
+.guide-list__item { display: flex; align-items: center; }
+.guide-list__item .guide-list__row { flex: 1; min-width: 0; }
+.guide-list__skip { flex: none; color: var(--ant-color-text-tertiary); opacity: 0; transition: opacity 120ms ease; }
+.guide-list__item:hover .guide-list__skip, .guide-list__skip:focus-visible { opacity: 1; }
+@media (hover: none) { .guide-list__skip { opacity: 1; } }
+.guide-list__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 12px; }
+.guide-list__hide { color: var(--ant-color-text-tertiary); font-size: 12px; }
+
+/* The next thing to click. Sits above the page and lets every click through. Above dialogs so it can
+   point inside one, below dropdowns and tooltips so it never covers what someone just opened. */
+.guide-ring, .guide-card { position: fixed; left: 0; top: 0; z-index: 1045; opacity: 0; will-change: transform; transition: opacity 180ms ease; }
+.guide-ring[data-visible='true'], .guide-card[data-visible='true'] { opacity: 1; }
+.guide-gliding { transition: opacity 180ms ease, transform 380ms cubic-bezier(0.22, 1, 0.36, 1), width 380ms cubic-bezier(0.22, 1, 0.36, 1), height 380ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+.guide-ring::after { content: ''; position: absolute; inset: 0; border-radius: inherit; animation: guide-pulse 2s ease-out 3; }
+/* A glow sitting on the target's own edge, so it never reads as a second border. */
+.guide-ring {
+  pointer-events: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--guide-primary) 30%, transparent), 0 0 18px 3px color-mix(in srgb, var(--guide-primary) 32%, transparent);
+}
+/* Typing or waiting: the field's own focus is enough, so the glow steps back. */
+.guide-ring[data-state='typing'], .guide-ring[data-state='working'] { opacity: 0 !important; }
+@keyframes guide-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--guide-primary) 45%, transparent); }
+  100% { box-shadow: 0 0 0 12px transparent; }
+}
+
+.guide-card {
+  width: 300px; max-width: calc(100vw - 24px); padding: 12px 14px; border: 1px solid var(--guide-border); border-radius: 10px;
+  background: var(--guide-bg); color: var(--guide-text); box-shadow: var(--guide-shadow);
+}
+.guide-card[data-side='dock'] { width: calc(100vw - 24px); }
+.guide-card[data-state='typing'], .guide-card[data-state='working'], .guide-card[data-state='done'] { width: auto; min-width: 200px; max-width: 300px; padding: 8px 12px; }
+.guide-card__content { animation: guide-content 220ms ease-out; }
+@keyframes guide-content {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.guide-card__head { display: flex; align-items: center; gap: 8px; }
+.guide-card__title { flex: 1; min-width: 0; font-weight: 600; }
+.guide-card__close { flex: none; margin: -4px -6px -4px 0; color: var(--guide-muted); }
+.guide-card__tick { color: var(--guide-primary); animation: guide-tick 320ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes guide-tick {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.guide-card__busy { color: var(--guide-primary); }
+.guide-card__body { margin: 6px 0 0; color: var(--guide-muted); line-height: 1.5; }
+.guide-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; color: var(--guide-muted); font-size: 12px; }
+.guide-card__progress { margin-left: -7px; color: var(--guide-muted); font-size: 12px; }
+.guide-card__actions { display: inline-flex; gap: 4px; }
+
+.guide-card__arrow { position: absolute; width: 10px; height: 10px; background: var(--guide-bg); border: 1px solid var(--guide-border); border-right: 0; border-bottom: 0; }
+.guide-card[data-side='corner'] .guide-card__arrow, .guide-card[data-side='dock'] .guide-card__arrow { display: none; }
+.guide-card[data-side='bottom'] .guide-card__arrow { top: -6px; left: calc(var(--guide-arrow) - 5px); transform: rotate(45deg); }
+.guide-card[data-side='top'] .guide-card__arrow { bottom: -6px; left: calc(var(--guide-arrow) - 5px); transform: rotate(225deg); }
+.guide-card[data-side='right'] .guide-card__arrow { left: -6px; top: calc(var(--guide-arrow) - 5px); transform: rotate(-45deg); }
+.guide-card[data-side='left'] .guide-card__arrow { right: -6px; top: calc(var(--guide-arrow) - 5px); transform: rotate(135deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-ring::after, .guide-card__content, .guide-card__tick { animation: none; }
+  .guide-gliding { transition: opacity 180ms ease; }
+}

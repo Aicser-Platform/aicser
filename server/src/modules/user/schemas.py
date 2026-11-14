@@ -68,6 +68,7 @@ class UserProfileResponse(BaseModel):
     last_name: Optional[str] = None
     phone_number: Optional[str] = None
     company: Optional[str] = None
+    company_managed: bool = False
     location: Optional[str] = None
     timezone: Optional[str] = None
     bio: Optional[str] = None

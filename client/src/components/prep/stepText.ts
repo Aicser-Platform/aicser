@@ -57,7 +57,7 @@ export function stepSentence(step: PrepStep, t: T): string {
     case 'flatten_json':
       return t('s_flatten', { column: String(a.column ?? '') });
     case 'explode':
-      return t('s_explode', { column: String(a.column ?? '') });
+      return t('s_explode', { column: list([...(a.column ? [a.column as string] : []), ...((a.columns as string[]) ?? [])]) });
     case 'dedupe':
       return Array.isArray(a.keys) && a.keys.length ? t('s_dedupe_by', { columns: list(a.keys) }) : t('s_dedupe');
     case 'filter_rows':
@@ -97,6 +97,18 @@ export function stepSentence(step: PrepStep, t: T): string {
       return t('s_predict', { name: String(a.into ?? '') || t('s_predict_default') });
     case 'ai_answer':
       return t('s_ai_answer', { columns: list(a.columns) });
+    case 'window':
+      return t('s_window', { calc: t(`calc_${String(a.calc ?? '')}`), column: String(a.column ?? ''), into: String(a.into ?? '') });
+    case 'bin':
+      return t('s_bin', { column: String(a.column ?? ''), into: String(a.into ?? '') });
+    case 'index':
+      return t('s_index', { into: String(a.into ?? '') });
+    case 'top_n':
+      return t('s_top_n', { n: Number(a.n ?? 0), column: String(a.order_by ?? '') });
+    case 'remove_rows':
+      return t('s_remove_rows', { top: Number(a.top ?? 0), bottom: Number(a.bottom ?? 0) });
+    case 'header_rows':
+      return t('s_header_rows', { rows: Number(a.rows ?? 1) });
     default:
       return kind;
   }

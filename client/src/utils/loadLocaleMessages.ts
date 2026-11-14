@@ -7,9 +7,7 @@ import { isMessageLocale } from '@/config/localeMessages';
  */
 export async function loadLocaleMessages(locale: string): Promise<Record<string, unknown>> {
   const code = isMessageLocale(locale) ? locale : DEFAULT_LOCALE;
-  const res = await fetch(`/api/locales/${encodeURIComponent(code)}`, {
-    cache: 'no-store',
-  });
+  const res = await fetch(`/api/locales/${encodeURIComponent(code)}`);
   if (!res.ok) {
     throw new Error(`Failed to load locale "${code}" (${res.status})`);
   }

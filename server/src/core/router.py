@@ -19,6 +19,7 @@ from src.modules.spatial.router import router as spatial_router
 from src.modules.folders.router import router as folders_router
 from src.modules.notebooks.router import router as notebooks_router
 from src.modules.workbooks.router import router as workbooks_router
+from src.modules.office_files.router import router as office_files_router
 from src.modules.prep.router import router as prep_router
 from src.modules.semantic_domains.router import router as semantic_domains_router
 from src.modules.governance.router import router as governance_router
@@ -42,6 +43,7 @@ from src.core.licensing.router import router as licensing_router
 
 logger = logging.getLogger(__name__)
 
+from src.modules.share_links.router import router as share_links_router
 api_router = APIRouter()
 
 
@@ -63,6 +65,7 @@ api_router.include_router(data_router, prefix="/data", tags=["data"])
 api_router.include_router(onboarding_router, prefix="/api/onboarding", tags=["onboarding"])
 api_router.include_router(queries_router, prefix="/api/queries", tags=["queries"])
 api_router.include_router(feed_router, prefix="/api/feed", tags=["feed"])
+api_router.include_router(share_links_router, prefix="/api/share-links", tags=["share-links"])
 api_router.include_router(charts_router, prefix="/api/dashboards/{dashboard_id}/charts", tags=["charts"])
 api_router.include_router(dashboards_router, prefix="/api/dashboards", tags=["dashboards"])
 api_router.include_router(standalone_chart_router, prefix="/api/chart", tags=["charts"])
@@ -71,6 +74,7 @@ api_router.include_router(spatial_router, prefix="/api/spatial", tags=["location
 api_router.include_router(folders_router, prefix="/api/folders", tags=["folders"])
 api_router.include_router(notebooks_router, prefix="/api/notebooks", tags=["notebooks"])
 api_router.include_router(workbooks_router, prefix="/api/workbooks", tags=["workbooks"])
+api_router.include_router(office_files_router, prefix="/api/office-files", tags=["docs and slides"])
 api_router.include_router(prep_router, prefix="/api/prep", tags=["prepare"])
 api_router.include_router(semantic_domains_router, prefix="/api/semantic-domains", tags=["semantic"])
 api_router.include_router(governance_router, prefix="/api/governance", tags=["governance"])
@@ -131,6 +135,11 @@ async def delete_data_source_proxy(
 # ── EE routes (lazy-loaded, only when AISER_EDITION=enterprise) ───────────────
 if is_ee_enabled():
     try:
+        from src.modules.sandbox.router import sandbox_router
+        api_router.include_router(sandbox_router, prefix="/api/sandbox", tags=["sandbox"])
+    except Exception as _err:
+        logger.warning("Sandbox router not loaded: %s", _err)
+    try:
         from src.modules.chats.router import router as chat_module_router
         from src.modules.chats.conversations.router import router as conversation_router
         from src.modules.chats.assets.router import router as assets_router
@@ -187,6 +196,30 @@ if is_ee_enabled():
         )
     except Exception as _err:
         logger.warning("Alerts router not loaded: %s", _err)
+
+    try:
+        from src.modules.dashboards.revisions_router import router as revisions_router
+        api_router.include_router(revisions_router, prefix="/api/revisions", tags=["revisions"])
+    except Exception as _err:
+        logger.warning("Revisions router not loaded: %s", _err)
+
+    try:
+        from src.modules.plant.router import router as plant_router
+        api_router.include_router(
+            plant_router, prefix="/api/plant", tags=["plant"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Plant router not loaded: %s", _err)
+
+    try:
+        from src.modules.agent.router import router as agent_router
+        api_router.include_router(
+            agent_router, prefix="/api", tags=["agent"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Agent router not loaded: %s", _err)
 
     try:
         from src.modules.decision_os.router import router as decision_os_router
@@ -402,6 +435,11 @@ if is_ee_enabled():
             mcp_router, prefix="/mcp", tags=["mcp"],
             dependencies=[Depends(require_valid_license)],
         )
+        from src.enterprise.modules.mcp_server.oauth_router import app_router as mcp_oauth_app_router
+        from src.enterprise.modules.mcp_server.oauth_router import router as mcp_oauth_router
+        api_router.include_router(mcp_oauth_router, tags=["mcp"], dependencies=[Depends(require_valid_license)])
+        api_router.include_router(mcp_oauth_app_router, prefix="/api/mcp-oauth", tags=["mcp"],
+                                  dependencies=[Depends(require_valid_license)])
     except Exception as _err:
         logger.warning("MCP server router not loaded: %s", _err)
 
@@ -420,6 +458,9 @@ if is_ee_enabled():
             embed_assistant_router, prefix="/api/embed/assistants", tags=["embed-assistants"],
             dependencies=[Depends(require_valid_license)],
         )
+        from src.enterprise.modules.embed.agents_router import router as ai_agents_router
+        api_router.include_router(ai_agents_router, prefix="/api/agents", tags=["ai-agents"],
+                                  dependencies=[Depends(require_valid_license)])
     except Exception as _err:
         logger.warning("Embed assistants router not loaded: %s", _err)
 

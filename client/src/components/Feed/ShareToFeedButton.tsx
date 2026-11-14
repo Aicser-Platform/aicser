@@ -57,6 +57,7 @@ const ShareToFeedButton: React.FC<ShareToFeedButtonProps> = ({
           type="text"
           icon={<ShareAltOutlined />}
           className="message-feedback-btn"
+          data-guide="publish-insight"
           disabled={disabled}
           aria-label={t('share_tooltip')}
           onClick={handleShare}

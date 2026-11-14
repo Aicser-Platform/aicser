@@ -78,6 +78,8 @@ class LoginResponse(UserResponse):
 
 class TwoFactorStatusResponse(BaseModel):
     enabled: bool
+    has_password: bool = True
+    backup_codes_left: int = 0
 
 
 class TwoFactorEnrollStartResponse(BaseModel):
@@ -100,6 +102,8 @@ class TwoFactorDisableRequest(BaseModel):
     # Required whenever the account has a password (verified in disable_totp);
     # optional only for the rare password-less/OAuth-only account.
     password: Optional[str] = None
+    # For accounts with no password here (provider sign-in): a code from the authenticator.
+    code: Optional[str] = Field(default=None, min_length=6, max_length=6)
 
 
 class TwoFactorVerifyLoginRequest(BaseModel):

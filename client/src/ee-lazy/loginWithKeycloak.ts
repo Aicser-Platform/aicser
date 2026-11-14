@@ -1,0 +1,1 @@
+export { loginWithKeycloak } from '@/ee';

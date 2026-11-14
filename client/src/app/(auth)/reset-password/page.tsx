@@ -38,7 +38,7 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     if (!isSupabaseRecovery) return;
-    import('@/ee').then((mod) => {
+    import('@/ee-lazy/completeSupabaseRedirectSession').then((mod) => {
       mod.completeSupabaseRedirectSession?.().catch(() => undefined);
     });
   }, [isSupabaseRecovery]);

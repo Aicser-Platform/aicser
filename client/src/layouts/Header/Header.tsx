@@ -1,11 +1,12 @@
+import { GuideLauncher } from '@/components/guide/GuideLauncher';
 import React from 'react';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BgColorsOutlined,
   FolderOutlined,
   DownOutlined,
   PlusOutlined,
+  SearchOutlined,
   BankOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
@@ -21,7 +22,7 @@ import { asDynamicModule } from '@/utils/asDynamicModule';
 
 const ProjectSelectorModal = dynamic(
   () =>
-    import('@/ee').then((m) =>
+    import('@/ee-lazy/ProjectSelectorModal').then((m) =>
       asDynamicModule(m.ProjectSelectorModal, () => null),
     ),
   { ssr: false },
@@ -115,7 +116,7 @@ export const LayoutHeader: React.FC<Props> = ({
     () =>
       dynamic(
         () =>
-          import('@/ee').then((m) =>
+          import('@/ee-lazy/ThemeCustomizer').then((m) =>
             asDynamicModule<{ open?: boolean; onClose?: () => void }>(m.ThemeCustomizer, () => null),
           ),
         { ssr: false },
@@ -123,17 +124,31 @@ export const LayoutHeader: React.FC<Props> = ({
     [],
   );
   const [customizerOpen, setCustomizerOpen] = React.useState(false);
+  const [shortcutLabel, setShortcutLabel] = React.useState('Ctrl K');
+  React.useEffect(() => {
+    if (/mac|iphone|ipad/i.test(navigator.platform)) setShortcutLabel('⌘K');
+  }, []);
+  // Opened from the profile menu, with the other appearance choices.
+  React.useEffect(() => {
+    const open = () => setCustomizerOpen(true);
+    window.addEventListener('open-theme-customizer', open);
+    return () => window.removeEventListener('open-theme-customizer', open);
+  }, []);
 
   // Fully built (invitations/alerts/AI tips/activity, mark-read, dismiss,
   // ack actions) but never actually mounted anywhere in the app — the only
   // place a user could see a notification was the separate, feed-specific
   // bell on /discover (DiscoverNotifications), which only covers social
   // events (follow/comment/reaction), not this broader activity inbox.
+  const SandboxBar = React.useMemo(
+    () => dynamic(() => import('@/ee-lazy/SandboxBar').then((m) => asDynamicModule(m.SandboxBar, () => null)), { ssr: false }),
+    [],
+  );
   const ActivityInboxBell = React.useMemo(
     () =>
       dynamic(
         () =>
-          import('@/ee').then((m) => asDynamicModule(m.ActivityInboxBell, () => null)),
+          import('@/ee-lazy/ActivityInboxBell').then((m) => asDynamicModule(m.ActivityInboxBell, () => null)),
         { ssr: false },
       ),
     [],
@@ -336,7 +351,7 @@ export const LayoutHeader: React.FC<Props> = ({
       <Layout.Header
       className="layout-app-header"
       style={{
-        lineHeight: '64px',
+        lineHeight: 'var(--app-header-height, 52px)',
         background: headerGradient,
         color: 'var(--ant-color-text)',
         boxShadow: 'none',
@@ -354,7 +369,9 @@ export const LayoutHeader: React.FC<Props> = ({
           <Tooltip title={collapsed ? t('open_sidebar') : t('collapse_sidebar')}>
             <Button
               type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              icon={collapsed ? <MenuUnfoldOutlined
+              aria-label={collapsed ? t('open_sidebar') : t('collapse_sidebar')}
+/> : <MenuFoldOutlined />}
               onClick={() => setCollapsed(!collapsed)}
               aria-label={collapsed ? t('open_sidebar') : t('collapse_sidebar')}
               className="header-shell-icon-btn icon-only-btn sidebar-toggle"
@@ -482,6 +499,22 @@ export const LayoutHeader: React.FC<Props> = ({
               />
             </Tooltip>
           )}
+          {isEnterpriseEdition && <SandboxBar />}
+          {/* Same as ⌘K / Ctrl K: pages, settings and everything people have named. */}
+          <button
+            type="button"
+            className="header-search-trigger"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
+            aria-label={t('search')}
+          >
+            <SearchOutlined />
+            {!isBreakpoint ? (
+              <>
+                <span className="header-search-trigger__label">{t('search')}</span>
+                <kbd className="header-search-trigger__keys">{shortcutLabel}</kbd>
+              </>
+            ) : null}
+          </button>
           {onOpenDataSourceModal && (
             <Tooltip
               title={highlightConnectData ? t('connect_first_data_source') : t('connect_data_source')}
@@ -491,6 +524,7 @@ export const LayoutHeader: React.FC<Props> = ({
                 <Button
                   type="text"
                   icon={<PlusOutlined />}
+                  data-guide="connect-data"
                   onClick={onOpenDataSourceModal}
                   className="header-shell-icon-btn icon-only-btn header-shell-icon-btn--primary icon-only-btn--primary"
                   aria-label={highlightConnectData ? t('connect_first_data_source') : t('connect_data_source')}
@@ -498,18 +532,7 @@ export const LayoutHeader: React.FC<Props> = ({
               </Badge>
             </Tooltip>
           )}
-          {!isBreakpoint && isEnterpriseEdition && (
-            <Tooltip title={t('customize_theme')}>
-              <Button
-                type="text"
-                icon={<BgColorsOutlined />}
-                onClick={() => setCustomizerOpen(true)}
-                className="header-shell-icon-btn icon-only-btn"
-                aria-label={t('customize_theme')}
-              />
-            </Tooltip>
-          )}
-
+          <GuideLauncher />
           {isEnterpriseEdition && <ActivityInboxBell />}
 
           <UserProfileDropdown showText={false} className="header-profile-trigger" />

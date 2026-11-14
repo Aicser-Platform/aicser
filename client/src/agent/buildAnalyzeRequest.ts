@@ -1,3 +1,4 @@
+import { activeChatAgent } from './activeChatAgent';
 import type { SurfaceContext } from '@/agent/surfaceContext';
 import { analysisModeForSurface } from '@/agent/surfaceContext';
 
@@ -83,6 +84,7 @@ export function buildChatAnalyzeRequestBody(opts: {
 
   return {
     ...base,
+    ...activeChatAgent(),
     ...(opts.selectedDataSourceIds?.length
       ? { selected_data_source_ids: opts.selectedDataSourceIds }
       : {}),

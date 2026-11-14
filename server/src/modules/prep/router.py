@@ -17,6 +17,7 @@ from src.modules.prep import service
 from src.modules.prep.engine.compiler import compile_steps
 from src.modules.prep.models import PrepRecipe, PrepRecipeVersion
 from src.modules.prep.schemas import (
+    SourceRef,
     DatePatternRequest,
     DetectRequest,
     FailuresRequest,
@@ -115,6 +116,16 @@ async def profile(req: ProfileRequest, project_id: Optional[str] = Query(default
 async def detect(req: DetectRequest, project_id: Optional[str] = Query(default=None),
                  current_token: Union[str, dict] = Depends(JWTCookieBearer())) -> Dict[str, Any]:
     return await service.detect(caller_from_token(current_token, project_id), req)
+
+
+@router.post("/readiness")
+@rate_limit(requests_per_minute=30, bucket="prep_preview")
+async def readiness(req: SourceRef, project_id: Optional[str] = Query(default=None),
+                    current_token: Union[str, dict] = Depends(JWTCookieBearer())) -> Dict[str, Any]:
+    """After an upload or a new sheet: does it need tidying, and the steps that would do it."""
+    from src.modules.prep.readiness import readiness as check
+
+    return await check(caller_from_token(current_token, project_id), req.data_source_id, req.table)
 
 
 @router.post("/failures")

@@ -608,9 +608,9 @@ def test_local_model_cache_reuses_loaded_model(embedding_service, monkeypatch):
         load_calls["count"] += 1
         return _FakeModel()
 
-    fake_module = type(sys)("sentence_transformers")
-    fake_module.SentenceTransformer = fake_ctor
-    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    fake_module = type(sys)("src.shared.onnx_models")
+    fake_module.OnnxEncoder = fake_ctor
+    monkeypatch.setitem(sys.modules, "src.shared.onnx_models", fake_module)
 
     m1 = embedding_service._load_local_model("BAAI/bge-small-en-v1.5")
     m2 = embedding_service._load_local_model("BAAI/bge-small-en-v1.5")
@@ -634,9 +634,9 @@ def test_local_model_load_requests_matryoshka_truncation_to_384(embedding_servic
         captured["truncate_dim"] = truncate_dim
         return _FakeModel()
 
-    fake_module = type(sys)("sentence_transformers")
-    fake_module.SentenceTransformer = fake_ctor
-    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    fake_module = type(sys)("src.shared.onnx_models")
+    fake_module.OnnxEncoder = fake_ctor
+    monkeypatch.setitem(sys.modules, "src.shared.onnx_models", fake_module)
 
     embedding_service._local_model_cache.clear()
     embedding_service._load_local_model("intfloat/multilingual-e5-small")

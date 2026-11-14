@@ -145,3 +145,41 @@
   width: 100%;
   padding: 32px 24px;
 }
+
+/* variant="page": the page's own shape while a route loads (title, one line, rows). */
+.app-loading-page {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-loading-page__title,
+.app-loading-page__line {
+  border-radius: 6px;
+  background: var(--ant-color-fill-secondary);
+  animation: app-loading-page-pulse 1.4s ease-in-out infinite;
+}
+
+.app-loading-page__title {
+  width: 220px;
+  height: 26px;
+}
+
+.app-loading-page__line {
+  width: min(420px, 70%);
+  height: 14px;
+}
+
+.app-loading-page__body {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--ant-color-bg-container);
+}
+
+@keyframes app-loading-page-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}

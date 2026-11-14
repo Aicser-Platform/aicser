@@ -4,23 +4,28 @@ import CustomLayout from '@/layouts/DashboardLayout/DashboardLayout';
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import { asDynamicModule } from '@/utils/asDynamicModule';
-import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
+import { PageLoading } from '@/components/ui/AppLoadingIndicator';
 import { SkipToContentLink } from '@/components/layout/SkipToContentLink';
 import { CommandPalette } from '@/components/search/CommandPalette';
 import GlobalPricingModal from '@/components/GlobalPricingModal';
+import { GuideHost } from '@/components/guide/GuideHost';
+import { UploadReadinessWatcher } from '@/components/prep/UploadReadinessWatcher';
 import '@/app/globals.css';
 
 const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
 const BillingSuccessHandler = dynamic(
-  () => import('@/ee').then((m) => asDynamicModule(m.BillingSuccessHandler, () => null)),
+  () => import('@/ee-lazy/BillingSuccessHandler').then((m) => asDynamicModule(m.BillingSuccessHandler, () => null)),
+  { ssr: false, loading: () => null },
+);
+const LicenseNotice = dynamic(
+  () => import('@/ee-lazy/LicenseNotice').then((m) => asDynamicModule(m.LicenseNotice, () => null)),
   { ssr: false, loading: () => null },
 );
 const TrialExpiryBanner = dynamic(
-  () => import('@/ee').then((m) => asDynamicModule(m.TrialExpiryBanner, () => null)),
+  () => import('@/ee-lazy/TrialExpiryBanner').then((m) => asDynamicModule(m.TrialExpiryBanner, () => null)),
   { ssr: false, loading: () => null },
 );
 
@@ -73,7 +78,6 @@ function SubscriptionInitializer() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const t = useTranslations('layout');
   const { isAuthenticated, authLoading } = useAuthStore();
   const router = useRouter();
 
@@ -87,7 +91,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }, [authLoading, isAuthenticated, router]);
 
   if (authLoading) {
-    return <AppLoadingIndicator variant="full" tip={t('loading')} />;
+    return <PageLoading />;
   }
   if (!isAuthenticated) return null;
   return <>{children}</>;
@@ -98,10 +102,15 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = React.memo(({ c
     <ProtectedRoute>
       <SkipToContentLink />
       <SubscriptionInitializer />
-      <CustomLayout banner={<TrialExpiryBanner />}>
+      <CustomLayout banner={<><LicenseNotice /><TrialExpiryBanner /></>}>
+        <GuideHost />
         {children}
       </CustomLayout>
       <BillingSuccessHandler />
+      {/* The one listener for upgrade CTAs and plan-limit errors (open-pricing-modal), on every page. */}
+      <GlobalPricingModal />
+      <CommandPalette />
+      <UploadReadinessWatcher />
     </ProtectedRoute>
   );
 });

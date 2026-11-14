@@ -1,0 +1,1 @@
+export { handleKeycloakCallback } from '@/ee';

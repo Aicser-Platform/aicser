@@ -122,7 +122,17 @@ def _storage_configured(config: dict[str, Any]) -> bool:
     return False
 
 
+def email_config_is_platform_managed() -> bool:
+    """On SaaS one mail setup serves every tenant, so it comes from the deployment's env only; an org
+    admin's saved override would change mail for all customers."""
+    from src.core.deployment_mode import is_saas_deployment
+
+    return is_saas_deployment()
+
+
 async def get_effective_email_config() -> dict[str, Any]:
+    if email_config_is_platform_managed():
+        return _email_from_env()
     admin = await _get_admin_setting(EMAIL_SETTING_KEY)
     if admin is not None:
         if admin.get("enabled") is False:
@@ -132,7 +142,17 @@ async def get_effective_email_config() -> dict[str, Any]:
     return _email_from_env()
 
 
+def storage_config_is_platform_managed() -> bool:
+    """On SaaS one object store serves every tenant, so it comes from the deployment's env only; an
+    org admin's saved override would redirect every customer's files (same rule as email)."""
+    from src.core.deployment_mode import is_saas_deployment
+
+    return is_saas_deployment()
+
+
 async def get_effective_storage_config() -> dict[str, Any]:
+    if storage_config_is_platform_managed():
+        return _storage_from_env()
     admin = await _get_admin_setting(STORAGE_SETTING_KEY)
     if admin is not None:
         if admin.get("enabled") is False:
@@ -191,9 +211,19 @@ def public_storage_status(config: dict[str, Any]) -> dict[str, Any]:
 async def get_runtime_config_status() -> dict[str, Any]:
     email = await get_effective_email_config()
     storage = await get_effective_storage_config()
+    if email_config_is_platform_managed():
+        # Tenants don't see the platform's mail server details.
+        email_status = {"managed": True, "enabled": bool(email.get("enabled")), "configured": bool(email.get("configured"))}
+    else:
+        email_status = {"managed": False, **public_email_status(email)}
+    if storage_config_is_platform_managed():
+        # Tenants don't see the platform's bucket, endpoint or region.
+        storage_status = {"managed": True, "enabled": bool(storage.get("enabled")), "configured": bool(storage.get("configured"))}
+    else:
+        storage_status = {"managed": False, **public_storage_status(storage)}
     return {
-        "email": public_email_status(email),
-        "storage": public_storage_status(storage),
+        "email": email_status,
+        "storage": storage_status,
     }
 
 
@@ -290,7 +320,7 @@ async def test_email_config(config: dict[str, Any] | None = None) -> dict[str, A
         def _test_resend() -> None:
             req = urllib.request.Request(
                 "https://api.resend.com/domains",
-                headers={"Authorization": f"Bearer {resolved.get('api_key')}"},
+                headers={"Authorization": f"Bearer {resolved.get('api_key')}", "User-Agent": "aicser-mailer/1.0"},
                 method="GET",
             )
             with urllib.request.urlopen(req, timeout=15) as response:
@@ -305,7 +335,7 @@ async def test_email_config(config: dict[str, Any] | None = None) -> dict[str, A
         port = int(resolved.get("port") or 587)
         username = str(resolved.get("username") or "")
         password = str(resolved.get("password") or "")
-        use_ssl = bool(resolved.get("use_ssl", False))
+        use_ssl = port == 465 or bool(resolved.get("use_ssl", False))
         use_tls = bool(resolved.get("use_tls", True))
         context = ssl.create_default_context()
         if use_ssl:

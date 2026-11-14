@@ -119,7 +119,7 @@ async def test_apply_result_uses_license_expiry_not_token_expiry():
         expires_at=token_expires_at,
         license_expires_at=license_expires_at,
     )
-    row = SimpleNamespace(max_users=None)
+    row = SimpleNamespace(max_users=None, license_type=None)
     claims = {
         "license_id": "lic-1",
         "customer_id": "cust-1",

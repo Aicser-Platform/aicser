@@ -98,6 +98,18 @@ def _request_organization_id(request: Request) -> Optional[str]:
     return org_id or None
 
 
+async def _resolve_request_organization_id(request: Request, user_id: str) -> Optional[str]:
+    explicit_id = _request_organization_id(request)
+    if explicit_id:
+        return explicit_id
+    try:
+        from src.modules.ai.services.user_byok_models import _resolve_user_organization_id
+
+        return await _resolve_user_organization_id(user_id, None)
+    except Exception:
+        return None
+
+
 async def _user_is_org_member(user_id: str, organization_id: str) -> bool:
     if not is_ee_enabled() or not organization_id:
         return False
@@ -606,7 +618,7 @@ async def get_ai_provider_keys(
 ):
     """Return AI provider keys with api_key masked. Never returns raw keys."""
     user_id = _require_user_id(current_token)
-    organization_id = _request_organization_id(request)
+    organization_id = await _resolve_request_organization_id(request, user_id)
     org_kv = await _get_org_ai_provider_settings(user_id, organization_id)
     all_kv = await _user_settings_repo.get_all_settings(user_id)
     result = {}
@@ -650,15 +662,24 @@ async def save_ai_provider_key(
     if not provider:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="provider is required")
     key_normalized = provider.strip().lower().replace(" ", "_")
-    organization_id = _request_organization_id(request)
-    use_org_scope = bool(organization_id)
-    if use_org_scope:
-        if not await _user_is_org_member(user_id, organization_id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization membership is required")
-        await _require_org_provider_key_manager(user_id, organization_id)
+    organization_id = await _resolve_request_organization_id(request, user_id)
+    use_org_scope = False
+    if organization_id:
+        if await _user_is_org_member(user_id, organization_id):
+            try:
+                await _require_org_provider_key_manager(user_id, organization_id)
+                use_org_scope = True
+            except HTTPException:
+                use_org_scope = False
 
     api_key_val = (payload.api_key or "").strip()
     endpoint_val = (payload.endpoint or "").strip()
+    if endpoint_val:
+        from src.shared.datasource_target import api_url_refusal
+
+        refusal = await api_url_refusal(endpoint_val)
+        if refusal:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=refusal)
     workspace_id_val = (payload.workspace_id or "").strip()
     # If client sends masked value (••••...), keep existing key and only update model/endpoint
     existing_raw_value = None
@@ -731,15 +752,22 @@ async def delete_ai_provider_key(
     if not provider:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="provider is required")
     key_normalized = provider.strip().lower().replace(" ", "_")
-    organization_id = _request_organization_id(request)
-    if organization_id:
-        if not await _user_is_org_member(user_id, organization_id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization membership is required")
-        await _require_org_provider_key_manager(user_id, organization_id)
-        await _save_org_ai_provider_setting(organization_id, key_normalized, None)
-        return {"success": True, "provider": key_normalized, "scope": "organization", "deleted": True}
+    organization_id = await _resolve_request_organization_id(request, user_id)
+    deleted_org = False
+    if organization_id and await _user_is_org_member(user_id, organization_id):
+        try:
+            await _require_org_provider_key_manager(user_id, organization_id)
+            await _save_org_ai_provider_setting(organization_id, key_normalized, None)
+            deleted_org = True
+        except HTTPException:
+            pass
     await _user_settings_repo.delete_setting(user_id, f"provider_key.{key_normalized}")
-    return {"success": True, "provider": key_normalized, "scope": "personal", "deleted": True}
+    return {
+        "success": True,
+        "provider": key_normalized,
+        "scope": "organization" if deleted_org else "personal",
+        "deleted": True,
+    }
 
 
 @router.get("/ai-provider-keys/ollama/tags")
@@ -756,6 +784,12 @@ async def list_ollama_tags(
     low = base.lower()
     if "169.254.169.254" in low or "metadata.google" in low:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint not allowed")
+    # On SaaS this server shares a private network with the platform's own services: public only.
+    from src.shared.datasource_target import api_url_refusal
+
+    refusal = await api_url_refusal(base)
+    if refusal:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=refusal)
     import httpx
 
     url = f"{base}/api/tags"

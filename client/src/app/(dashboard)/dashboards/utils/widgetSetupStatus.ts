@@ -1,5 +1,6 @@
 import type { WidgetInstance } from '../stores/dashboardStoreTypes';
 import { CHART_TYPE_CONFIGS } from '../Properties/PropertiesPanelConfig';
+import { runsOwnSql } from './chartQueryMode';
 
 export type SetupIssue = {
   key: string;
@@ -57,11 +58,7 @@ export function getWidgetSetupIssues(widget: WidgetInstance | null): SetupIssue[
   // never needs) tableName - bindSavedQuery() explicitly deletes it. Without
   // this exemption every SQL-bound widget permanently showed "Table not
   // set" in the properties header despite rendering data correctly.
-  const hasSqlSource = Boolean(
-    widget.chartQuery?.saved_query_id ||
-      widget.chartQuery?.query_snapshot_id ||
-      (typeof widget.chartOptions?.sample_sql === 'string' && widget.chartOptions.sample_sql.trim()),
-  );
+  const hasSqlSource = runsOwnSql(widget);
   // A SQL-bound widget (saved query / snapshot / custom SQL) gets its shape
   // from the query's own result columns, not the x/yMetrics shelf UI - the
   // schema's required-field list assumes the shelf-driven path, so it

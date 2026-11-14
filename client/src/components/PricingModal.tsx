@@ -14,7 +14,7 @@ const isEnterpriseEdition = edition === 'enterprise' || edition === 'ee';
 const showHostedBilling = isEnterpriseEdition && !isSelfHostDeploymentFromEnv();
 
 const PricingModalEE = dynamic<PricingModalProps>(
-  () => import('@/ee').then((m) => m.PricingModalEE as ComponentType<PricingModalProps>),
+  () => import('@/ee-lazy/PricingModalEE').then((m) => m.PricingModalEE as ComponentType<PricingModalProps>),
   { ssr: false },
 ) as ComponentType<PricingModalProps>;
 

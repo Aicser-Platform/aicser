@@ -140,6 +140,10 @@ async def update_domain(domain_id: str, req: DomainPatch, current_token: Union[s
     await _can_edit(caller)
     domain = await _load(db, domain_id, caller)
     if req.name is not None:
+        taken = (await db.execute(select(SemanticDomain.id).where(
+            _org_filter(caller), SemanticDomain.name == req.name.strip(), SemanticDomain.id != domain.id))).first()
+        if taken:
+            raise HTTPException(status_code=409, detail="A domain with this name already exists.")
         domain.name = req.name.strip()
     if req.description is not None:
         domain.description = req.description

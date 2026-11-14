@@ -10,6 +10,7 @@ import { Alert, Button, Space, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { Permission } from '@/constants/permissions';
 
 export type { Permission };
@@ -27,7 +28,7 @@ interface PermissionGuardProps {
    * - denyMode="explain" → Ask-admin empty state (correct for page/section shells)
    */
   fallback?: React.ReactNode;
-  /** Shown while permissions are loading; defaults to `fallback` when set, otherwise null */
+  /** Shown while permissions are loading (nothing by default: a denial is never shown before the check ends) */
   loadingFallback?: React.ReactNode;
   requireAll?: boolean; // If true, requires ALL permissions; if false, requires ANY
   /**
@@ -96,8 +97,11 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
   requireAll = false,
   denyMode = 'hide',
 }) => {
+  // Permissions are granted per organization: without one, org-level grants (org:edit, agent:configure…)
+  // were missing and a page Settings had opened for the person showed "no permission" inside it.
+  const currentOrganizationId = useOrganizationStore((s) => s.currentOrganization?.id);
   const { hasPermission, hasAnyPermission, hasAllPermissions, loading } = usePermissions({
-    organizationId,
+    organizationId: organizationId ?? currentOrganizationId,
     projectId,
     autoFetch: true,
   });
@@ -109,9 +113,9 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
       <PermissionDeniedExplain />
     ) : null;
 
+  // Still checking: never show a denial that is about to turn into access.
   if (loading) {
-    const loader = loadingFallback ?? denied;
-    return loader ? <>{loader}</> : null;
+    return loadingFallback ? <>{loadingFallback}</> : null;
   }
 
   // Check single permission

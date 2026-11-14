@@ -29,9 +29,7 @@ import { DisabledVisualPlaceholder } from '@/plugins/DisabledVisualPlaceholder';
 import { PluginVisual } from '@/plugins/PluginVisual';
 
 const widgetChunkLoading = () => (
-  <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-    <AppLoadingIndicator variant="minimal" />
-  </div>
+  <div className="animate-pulse" style={{ minHeight: 200, height: '100%', borderRadius: 8, background: 'var(--ant-color-fill-quaternary)' }} />
 );
 
 const GeoMapWidget = dynamic(

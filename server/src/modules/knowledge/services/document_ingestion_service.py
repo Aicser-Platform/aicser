@@ -378,34 +378,33 @@ class DocumentIngestionService:
 
     async def _parse_pdf(self, file_path: str, filename: str) -> Tuple[List[RawSection], Dict[str, Any]]:
         """
-        Parse PDF using PyMuPDF (fitz). Processes all pages; no page limit by default.
+        Parse a PDF (src/shared/pdf.py). Processes all pages; no page limit by default.
 
         Only pages with extractable text (text layer) are added. Image-only or blank
-        pages are skipped; for those, OCR would be needed (e.g. PyMuPDF + Tesseract).
+        pages go to _ocr_pages below.
         """
-        try:
-            import fitz  # pymupdf
-        except ImportError:
-            raise ImportError("pymupdf is required for PDF parsing: pip install pymupdf")
+        from src.shared import pdf
 
         loop = asyncio.get_event_loop()
 
         def _extract():
             sections: List[RawSection] = []
-            doc = fitz.open(file_path)
-            total_pages = len(doc)
+            total_pages = pdf.page_count(file_path)
             # Optional safety cap (0 = no limit)
             cap = _max_pages_per_document()
             max_pages = cap if cap > 0 else total_pages
             pages_to_process = min(total_pages, max_pages)
 
+            texts = pdf.page_texts(file_path, pages_to_process)
+            try:
+                tables = pdf.page_tables(file_path, pages_to_process)
+            except Exception as te:  # noqa: BLE001
+                logger.debug("PDF table extraction failed for %s: %s", filename, te)
+                tables = [[] for _ in texts]
+
             empty_pages: List[int] = []
-            for page_num in range(pages_to_process):
-                page = doc[page_num]
-                text = page.get_text("text")
-                if not (text and text.strip()):
-                    empty_pages.append(page_num)
-                if text and text.strip():
+            for page_num, text in enumerate(texts):
+                if text.strip():
                     sections.append(
                         RawSection(
                             text=text.strip(),
@@ -413,33 +412,19 @@ class DocumentIngestionService:
                             source_filename=filename,
                         )
                     )
-                # Extract tables (PyMuPDF 1.23+): find_tables() → to_markdown() for RAG
-                if hasattr(page, "find_tables"):
-                    try:
-                        finder = page.find_tables()
-                        tbl_list = getattr(finder, "tables", None)
-                        if tbl_list is None and hasattr(finder, "__iter__"):
-                            tbl_list = list(finder)
-                        tbl_list = tbl_list or []
-                        for ti, tbl in enumerate(tbl_list):
-                            if getattr(tbl, "row_count", 2) < 2 or getattr(tbl, "col_count", 2) < 2:
-                                continue
-                            if hasattr(tbl, "to_markdown"):
-                                md = tbl.to_markdown()
-                                if md and md.strip():
-                                    sections.append(
-                                        RawSection(
-                                            text=md.strip(),
-                                            page_number=page_num + 1,
-                                            source_filename=filename,
-                                            heading=f"Table {ti + 1}",
-                                            content_type="table",
-                                        )
-                                    )
-                    except Exception as te:  # noqa: BLE001
-                        logger.debug("PDF table extraction failed on page %s: %s", page_num + 1, te)
-
-            doc.close()
+                else:
+                    empty_pages.append(page_num)
+                # Tables as Markdown, for RAG
+                for ti, md in enumerate(tables[page_num]):
+                    sections.append(
+                        RawSection(
+                            text=md,
+                            page_number=page_num + 1,
+                            source_filename=filename,
+                            heading=f"Table {ti + 1}",
+                            content_type="table",
+                        )
+                    )
 
             if total_pages > 0 and len(sections) < total_pages and max_pages >= total_pages:
                 logger.info(
@@ -470,23 +455,29 @@ class DocumentIngestionService:
         return sections, meta
 
     async def _ocr_pages(self, file_path: str, pages: List[int], filename: str) -> List[RawSection]:
-        """Transcribe image-only PDF pages with a vision model (Enterprise AI); none in Community."""
+        """Transcribe image-only PDF pages: on the self-hosted OCR server when one is configured
+        (src/shared/ocr_endpoint.py, any edition), otherwise with a vision model (Enterprise AI)."""
+        from src.shared import ocr_endpoint
+        from src.shared.pdf import page_images
+
+        if ocr_endpoint.configured():
+            pages_png = await asyncio.get_event_loop().run_in_executor(None, page_images, file_path, pages)
+            read: List[RawSection] = []
+            for page_num, png in pages_png:
+                try:
+                    text = await ocr_endpoint.read_page(png)
+                except Exception as exc:  # noqa: BLE001 - one unreadable page doesn't stop the document
+                    logger.info("OCR failed on %s page %d: %s", filename, page_num + 1, exc)
+                    continue
+                if text:
+                    read.append(RawSection(text=text, page_number=page_num + 1, source_filename=filename, content_type="ocr"))
+            return read
         try:
             from src.modules.ai.services.litellm_service import LiteLLMService  # Enterprise AI, via its shim
         except ImportError:
             return []
-        import base64
 
-        import fitz  # pymupdf
-
-        def render() -> List[Tuple[int, str]]:
-            doc = fitz.open(file_path)
-            try:
-                return [(n, base64.b64encode(doc[n].get_pixmap(dpi=150).tobytes("png")).decode()) for n in pages]
-            finally:
-                doc.close()
-
-        images = await asyncio.get_event_loop().run_in_executor(None, render)
+        images = await asyncio.get_event_loop().run_in_executor(None, page_images, file_path, pages)
         llm = LiteLLMService()
         out: List[RawSection] = []
         for page_num, png in images:

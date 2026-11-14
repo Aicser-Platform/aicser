@@ -11,7 +11,9 @@ registers one to push it live to everyone who has the dashboard open.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from uuid import UUID
@@ -25,6 +27,17 @@ from src.modules.dashboards.models import DashboardComment
 logger = logging.getLogger(__name__)
 
 MAX_BODY = 4000
+MAX_MENTIONS = 20
+# The comment box saves a picked person as @[Name](user:<id>), so mentions are exact, never guessed from names.
+MENTION = re.compile(r"@\[[^\]\n]{1,80}\]\(user:([0-9a-fA-F-]{36})\)")
+
+
+def mentioned_ids(body: str) -> List[str]:
+    return list(dict.fromkeys(m.lower() for m in MENTION.findall(body or "")))[:MAX_MENTIONS]
+
+
+def plain(body: str) -> str:
+    return re.sub(r"@\[([^\]\n]{1,80})\]\(user:[0-9a-fA-F-]{36}\)", r"@\1", body or "")
 _listeners: List[Callable[[str, str, Dict[str, Any]], Awaitable[None]]] = []
 
 
@@ -157,10 +170,45 @@ async def create(db: AsyncSession, dashboard_id: UUID, user_id: str, body: str, 
     await db.refresh(comment)
     out = serialize(comment)
     await _publish(str(dashboard_id), "comment:created", out)
+    if mentioned_ids(text):
+        _tasks.add(t := asyncio.create_task(_email_mentioned(dashboard_id, user_id, comment.author_name or "Someone", text)))
+        t.add_done_callback(_tasks.discard)
     if reopened is not None:
         await db.refresh(reopened)
         await _publish(str(dashboard_id), "comment:updated", serialize(reopened))
     return out
+
+
+_tasks: set = set()
+
+
+async def _email_mentioned(dashboard_id: UUID, author_id: str, author: str, body: str) -> None:
+    """Email each person mentioned who can open the dashboard (others are skipped silently, so a
+    mention never reveals a dashboard to someone outside it)."""
+    from sqlalchemy import text as sa_text
+
+    from src.db.session import async_session
+    from src.shared.transactional_email import send_transactional_email
+
+    try:
+        async with async_session() as db:
+            name = (await db.execute(sa_text("SELECT name FROM dashboards WHERE id = :id"), {"id": str(dashboard_id)})).scalar()
+            for uid in mentioned_ids(body):
+                if uid == str(author_id).lower():
+                    continue
+                try:
+                    await authorize(db, uid, dashboard_id)
+                except HTTPException:
+                    continue
+                email = (await db.execute(sa_text("SELECT email FROM users WHERE CAST(id AS text) = :u"), {"u": uid})).scalar()
+                if email:
+                    import os
+
+                    link = f"{os.getenv('FRONTEND_URL', '').rstrip('/')}/dashboards?id={dashboard_id}&comments=open"
+                    await send_transactional_email([email], f"{author} mentioned you on {name or 'a dashboard'}",
+                                                   f"{author} wrote:\n\n{plain(body)[:1500]}\n\n{link}")
+    except Exception as exc:  # noqa: BLE001 - the comment is saved; the email is a courtesy
+        logger.warning("Mention emails for dashboard %s not sent: %s", dashboard_id, exc)
 
 
 async def _load(db: AsyncSession, dashboard_id: UUID, comment_id: str) -> DashboardComment:

@@ -127,7 +127,6 @@
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--ant-color-text-tertiary) !important;
   white-space: nowrap;
   overflow: hidden;

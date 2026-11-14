@@ -285,7 +285,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             setSelectedModel(nextId);
             if (!fromParent) handleChange?.(initial);
 
-            await Promise.all(list.filter((m) => m.available).map((m) => testModelConnection(m.id)));
+            // Only the model in use: checking every model on each visit called each provider
+            // and held up the page.
+            if (nextId && nextId !== 'auto') void testModelConnection(nextId);
         } catch (err: any) {
             const msg = err?.message || t('failed_load_ai_models');
             if (!composerEmbed) {
@@ -325,6 +327,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     const id = typeof modelId === 'object' ? (modelId as any).value : modelId;
     setSelectedModel(id);
     handleChange?.(id);
+    if (id && id !== 'auto') void testModelConnection(id);
 
     // Persist to user preferences in localStorage
     try {

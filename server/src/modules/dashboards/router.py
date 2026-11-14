@@ -391,11 +391,14 @@ async def update_dashboard(
     uid = user_id_from_payload(extract_user_payload(current_user))
     project_id = getattr(dashboard, "project_id", None)
     await require_permission(uid, "dashboard:edit", project_id=str(project_id) if project_id else None)
-    await enforce_publish_owner_edit(db, dashboard_id, current_user)
+    await enforce_publish_owner_edit(db, dashboard_id, current_user, permission="dashboard:edit")
 
-    updated = await service.update(dashboard, payload.dict(exclude_unset=True))
-    lib = DashboardLibraryService(db)
     data = payload.dict(exclude_unset=True)
+    # Public access only changes through POST /publish (policy, approval, audit), never as a config edit.
+    if isinstance(data.get("config"), dict):
+        data["config"] = {**data["config"], "is_public": bool((dashboard.config or {}).get("is_public"))}
+    updated = await service.update(dashboard, data)
+    lib = DashboardLibraryService(db)
     if "collectionId" in data:
         updated = await lib.assign_collection(updated, data.get("collectionId"))
     if "isFavorite" in data and data.get("isFavorite") is not None:
@@ -560,7 +563,7 @@ async def stream_dashboard_build_progress(
         iter_build_progress_sse(str(dashboard_id)),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
@@ -647,4 +650,8 @@ async def publish_dashboard(
     """Toggle anonymous read access via config.is_public."""
     await enforce_publish_owner_edit(db, dashboard_id, current_user)
     make_public = bool(payload.get("is_public", True)) if isinstance(payload, dict) else True
-    return await dash_ops.publish_dashboard(db, dashboard_id, make_public)
+    if make_public:
+        # Open to anyone without sign-in is the widest publishing there is: it goes the same way as
+        # publishing to public (the feed's policy, approval and audit), not around it.
+        return await dash_ops.request_public_access(db, dashboard_id, current_user)
+    return await dash_ops.publish_dashboard(db, dashboard_id, False)

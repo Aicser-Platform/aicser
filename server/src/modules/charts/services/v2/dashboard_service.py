@@ -155,6 +155,9 @@ class DashboardService:
         """
         from sqlalchemy import delete, select, update
 
+        from src.shared.legal_hold import refuse_if_held
+
+        await refuse_if_held(self.db, getattr(dashboard, "project_id", None))
         from src.core.edition import is_ee_enabled
         from src.modules.charts.models import Chart, DashboardEmbed, QueryPattern
         from src.modules.dashboards.models import (

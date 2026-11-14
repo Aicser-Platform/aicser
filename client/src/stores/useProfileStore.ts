@@ -12,6 +12,8 @@ export interface UserProfile {
   last_name: string | null;
   phone_number: string | null;
   company: string | null;
+  /** The company is the organization's name, changed in Settings › Organization. */
+  company_managed?: boolean;
   location: string | null;
   timezone: string | null;
   bio: string | null;
@@ -80,6 +82,7 @@ export const useProfileStore = create<ProfileStoreState>()(
               last_name: data.last_name || null,
               phone_number: data.phone_number || null,
               company: data.company || null,
+              company_managed: Boolean(data.company_managed),
               location: data.location || null,
               timezone: data.timezone || null,
               bio: data.bio || null,

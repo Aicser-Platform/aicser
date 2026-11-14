@@ -350,6 +350,7 @@ class ApprovalQueueItem(BaseModel):
     organizationId: Optional[str] = None
     projectId: Optional[str] = None
     rejectionReason: Optional[str] = None
+    possiblePersonalData: bool = False
 
 
 class ApprovalQueueResponse(BaseModel):

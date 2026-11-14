@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl';
 import { useProfileStore } from '@/stores/useProfileStore';
 import { ProfileForm } from './forms/ProfileForm';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
+import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { usePermissions, Permission } from '@/hooks/usePermissions';
 import type { TabComponentProps } from '../page';
 import type { ProfileFormValues } from '../types';
 
@@ -13,6 +15,13 @@ export const ProfileTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const [form] = Form.useForm<ProfileFormValues>();
   const { user } = useAuth();
   const { profile, updating, fetchProfile, updateProfile, uploadAvatar } = useProfileStore();
+
+  const { currentOrganization } = useOrganizationStore();
+  const { hasPermission, loading: permissionsLoading } = usePermissions({
+    organizationId: currentOrganization?.id,
+  });
+  const companyManaged = Boolean(profile?.company_managed);
+  const canEditOrganization = !permissionsLoading && hasPermission(Permission.ORG_EDIT);
 
   const [avatarUploading, setAvatarUploading] = React.useState(false);
 
@@ -42,7 +51,7 @@ export const ProfileTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         email: profile.email || user?.email || '',
         username: profile.username || '',
         phone_number: profile.phone_number || '',
-        company: profile.company || '',
+        company: (companyManaged && currentOrganization?.name) || profile.company || '',
         location: profile.location || '',
         timezone: profile.timezone || '',
         bio: profile.bio || '',
@@ -58,11 +67,12 @@ export const ProfileTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         email: user.email || '',
       });
     }
-  }, [profile, user, form]);
+  }, [profile, user, form, companyManaged, currentOrganization?.name]);
 
   const handleSubmit = async (values: ProfileFormValues) => {
     try {
-      const success = await updateProfile(values);
+      const { company, ...rest } = values;
+      const success = await updateProfile(companyManaged ? rest : { ...rest, company });
       if (success) {
         message.success(t('profile_update_success'));
       } else {
@@ -133,7 +143,13 @@ export const ProfileTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       </div>
 
       {/* Profile form - always editable, matches OrganizationTab (disabled only while saving) */}
-      <ProfileForm form={form} onFinish={handleSubmit} disabled={updating} />
+      <ProfileForm
+        form={form}
+        onFinish={handleSubmit}
+        disabled={updating}
+        companyManaged={companyManaged}
+        canEditOrganization={canEditOrganization}
+      />
     </Card>
   );
 };

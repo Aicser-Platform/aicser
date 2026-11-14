@@ -10,7 +10,7 @@
   --page-space-md: var(--spacing-md, 16px);
   --page-space-lg: var(--spacing-lg, 24px);
   --page-space-xl: var(--spacing-xl, 32px);
-  --page-header-title-size: 24px;
+  --page-header-title-size: var(--type-title-2, 22px);
   --page-header-desc-size: 14px;
   --page-section-gap: var(--spacing-lg, 24px);
   --page-content-gutter: var(--app-shell-gutter, 24px);
@@ -35,7 +35,7 @@
 .page-wrapper .page-header {
   display: flex;
   flex-direction: column;
-  gap: var(--page-space-sm);
+  gap: var(--page-space-xs);
   margin: 0 !important;
   padding: 0 !important;
 }
@@ -91,6 +91,16 @@
 
 .page-wrapper .page-title.ant-typography {
   margin-bottom: 0 !important;
+}
+
+.page-wrapper .page-header-info {
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  cursor: help;
+}
+
+.page-wrapper .page-header-leading {
+  gap: var(--page-space-sm);
 }
 
 .page-wrapper .page-description {
@@ -252,10 +262,6 @@
   color: var(--ant-color-text-secondary);
 }
 
-.page-wrapper .stat-card.ant-card:hover {
-  transform: translateY(-1px) !important;
-}
-
 /* ── Section cards ──────────────────────────────────────── */
 
 .page-wrapper .page-section-card.ant-card,
@@ -275,7 +281,7 @@
 }
 
 .page-wrapper .page-section-card > .ant-card-head-title {
-  font-size: 15px !important;
+  font-size: var(--type-headline, 16px) !important;
   font-weight: 600 !important;
 }
 
@@ -609,4 +615,99 @@
   .mobile-sidebar-backdrop {
     touch-action: none;
   }
+}
+
+/* A page's main list sits on the page itself (no framing card): content first, chrome last. */
+.page-list-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-space-md, 12px);
+}
+
+/* Settings › Integrations: one tile per service; settings open in a side panel. */
+.integration-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.integration-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  text-align: left;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.integration-tile:hover,
+.integration-tile:focus-visible {
+  background: var(--ant-color-fill-quaternary);
+  border-color: var(--ant-color-border);
+  outline: none;
+}
+
+.integration-tile__icon {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ant-color-primary);
+  margin-top: 2px;
+}
+
+.integration-tile__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.integration-tile__purpose {
+  font-size: 12px;
+}
+
+/* Settings page sections: the tab bar's rule doubles as the page divider. */
+.settings-page-tabs > .ant-tabs-nav {
+  margin-bottom: 0;
+}
+
+/* Page sections under the title (PageSectionTabs). */
+.page-section-tabs > .ant-tabs-nav {
+  margin: 0 0 var(--page-space-lg, 16px);
+}
+
+/* Header search: opens the command palette; the shortcut is shown so people learn it. */
+.header-search-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  margin-right: 4px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ant-color-text-tertiary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.header-search-trigger:hover,
+.header-search-trigger:focus-visible {
+  border-color: var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
+  outline: none;
+}
+
+.header-search-trigger__keys {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--ant-color-fill-quaternary);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 18px;
 }

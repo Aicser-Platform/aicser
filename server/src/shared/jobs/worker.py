@@ -6,6 +6,7 @@ Run with: python -m arq src.shared.jobs.worker.WorkerSettings
 ARQ uses Redis as its queue backend (same Redis instance used by the app).
 """
 import logging
+import asyncio
 import os
 
 # `python -m arq src.shared.jobs.worker.WorkerSettings` makes this file the
@@ -35,6 +36,10 @@ import src.db.registry  # noqa: F401
 from src.shared.jobs.tasks import (
     dispatch_due_pipelines_job,
     evaluate_alert_rules,
+    run_plant_machine_health,
+    compact_plant_lake,
+    run_publishing_housekeeping,
+    run_compliance_jobs,
     refresh_artifact_data,
     refresh_schema_cache,
     run_bi_sync,
@@ -48,11 +53,18 @@ from src.shared.jobs.tasks import (
     check_decision_calibration,
     run_ai_decision,
     run_scheduled_ai_decisions,
+    run_due_quality_tests,
     run_answer_accuracy_eval,
     train_ml_model,
     retrain_scheduled_ml_models,
     run_notebook,
     run_due_notebook_schedules,
+    run_agent_task,
+    resume_stalled_agent_tasks,
+    run_due_agent_schedules,
+    agent_daily_upkeep,
+    bill_platform_overage,
+    issue_pending_personal_licenses,
     run_workbook,
     run_due_workbook_schedules,
     score_scheduled_ml_models,
@@ -101,6 +113,10 @@ _JOB_FUNCTIONS = [
     run_scheduled_report,
     run_bi_sync,
     evaluate_alert_rules,
+    run_plant_machine_health,        # cron (every 10 min): machine health (EE Plant)
+    compact_plant_lake,              # cron (daily): sensor file compaction (EE Plant)
+    run_publishing_housekeeping,     # cron (hourly): public expiry and approval reminders
+    run_compliance_jobs,             # cron (every minute): SIEM forwarding; hourly audit retention
     refresh_artifact_data,  # on-demand + cron: re-execute widget queries
     sync_artifacts_after_schema_change,  # triggered when data source schema drifts
     refresh_all_active_schemas,      # cron: fans out schema refresh + drift detection to every active source
@@ -108,11 +124,18 @@ _JOB_FUNCTIONS = [
     check_decision_calibration,      # cron (nightly): decision-layer calibration vs outcomes (EE)
     run_ai_decision,                 # on-demand: one AI Decisions run over a query result (EE)
     run_scheduled_ai_decisions,      # cron (hourly): scheduled AI decisions refresh their datasets (EE)
+    run_due_quality_tests,           # cron (hourly): Catalog quality tests that are due (EE)
     run_answer_accuracy_eval,        # cron (nightly, opt-in) + on-demand: golden-set answer accuracy (EE)
     train_ml_model,                  # on-demand: train one model version (EE Models)
     retrain_scheduled_ml_models,     # cron (hourly): scheduled model retraining (EE Models)
     run_notebook,                    # on-demand: one notebook run in the sandboxed runner (EE)
     run_due_notebook_schedules,      # cron (every minute): queue due notebook schedules (EE)
+    run_agent_task,                  # on-demand: run or resume one Aicser Agent task (EE)
+    resume_stalled_agent_tasks,      # cron (every 5 minutes): re-queue agent tasks a crashed worker left running (EE)
+    run_due_agent_schedules,         # cron (every minute): start agent schedules that are due (EE)
+    agent_daily_upkeep,              # cron (daily): pause ownerless org agents, apply agent run retention (EE)
+    bill_platform_overage,           # cron (monthly): last month's platform overage onto Stripe invoices (EE SaaS)
+    issue_pending_personal_licenses, # cron (every 15 minutes): issue paid Aicser Personal licenses still pending
     run_workbook,                    # on-demand: refresh live sheet ranges as owner (EE)
     run_due_workbook_schedules,      # cron (every minute): queue due workbook schedules (EE)
     score_scheduled_ml_models,       # cron (hourly): scheduled batch scoring into a refreshed dataset (EE Models)
@@ -139,6 +162,7 @@ _LONG_JOB_TIMEOUTS = {
     "process_ai_analyze_job": 1800,
     "export_report_file": 900,
     "run_notebook": 1900,
+    "run_agent_task": 2400,
     "run_workbook": 900,
 }
 
@@ -187,10 +211,31 @@ async def startup(ctx: dict) -> None:
     setup_observability(os.getenv("OTEL_SERVICE_NAME", "aiser-worker"))
     logger.info("ARQ worker starting up")
     await _write_heartbeat()
+    # The search model loads on first use (seconds) and leaves when idle: holding it here cost ~500 MB
+    # in a process that often doesn't need it.
+    from src.shared.model_loading import unload_idle_forever
+
+    ctx["model_unloader"] = asyncio.create_task(unload_idle_forever())
+    # Sensor connections read here (no separate service); AISER_PLANT_READERS=false turns it off.
+    if os.getenv("AISER_PLANT_READERS", "true").strip().lower() not in ("0", "false", "no"):
+        from src.core.edition import is_ee_enabled
+
+        if is_ee_enabled():
+            from src.modules.plant.runtime import run_forever
+
+            ctx["plant_readers"] = asyncio.create_task(run_forever())
 
 
 async def shutdown(ctx: dict) -> None:
     from src.shared.observability.setup import shutdown_observability
+
+    readers = ctx.get("plant_readers")
+    if readers is not None:
+        readers.cancel()
+        await asyncio.gather(readers, return_exceptions=True)
+    unloader = ctx.get("model_unloader")
+    if unloader is not None:
+        unloader.cancel()
 
     shutdown_observability()
     logger.info("ARQ worker shutting down")
@@ -274,6 +319,32 @@ class WorkerSettings:
             name="workbook_schedules",
         ),
         cron(
+            _FUNCTIONS_BY_NAME["resume_stalled_agent_tasks"],
+            minute=set(range(0, 60, 5)),
+            name="agent_resume_stalled",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["run_due_agent_schedules"],
+            minute=set(range(60)),
+            name="agent_schedules",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["agent_daily_upkeep"],
+            hour={3},
+            minute={40},
+            name="agent_daily_upkeep",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["issue_pending_personal_licenses"],
+            minute={2, 17, 32, 47},
+            name="personal_license_issue",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["bill_platform_overage"],
+            day=1, hour=2, minute=15,
+            name="platform_overage_billing",
+        ),
+        cron(
             _FUNCTIONS_BY_NAME["retrain_scheduled_ml_models"],
             minute=25,
             name="ml_model_scheduled_retrain",
@@ -291,8 +362,38 @@ class WorkerSettings:
             timeout=3600,
         ),
         cron(
+            _FUNCTIONS_BY_NAME["run_due_quality_tests"],
+            minute=25,
+            name="catalog_quality_tests",
+            timeout=1800,
+        ),
+        cron(
             _FUNCTIONS_BY_NAME["drift_retrain_ml_models"],
             minute=50,
             name="ml_model_drift_retrain",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["run_plant_machine_health"],
+            minute=set(range(3, 60, 10)),
+            name="plant_machine_health",
+            timeout=280,
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["run_compliance_jobs"],
+            minute=set(range(60)),
+            name="compliance_jobs",
+            timeout=55,
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["run_publishing_housekeeping"],
+            minute=40,
+            name="publishing_housekeeping",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["compact_plant_lake"],
+            hour=1,
+            minute=20,
+            name="plant_lake_compaction",
+            timeout=1800,
         ),
     ]

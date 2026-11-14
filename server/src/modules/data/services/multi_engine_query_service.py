@@ -48,6 +48,7 @@ import importlib.util
 
 # Spark for big data processing - import lazily inside SparkEngine to avoid heavy startup at import time
 #  Always apply fall back here ??
+from src.shared.sql_guard import lock_duckdb, reaches_outside
 from src.core.edition import is_ee_enabled
 from src.modules.data.services.query_identity import (
     QueryAccess,
@@ -248,6 +249,8 @@ def check_sql_read_only_safety(query: str, dialect: Optional[str] = None) -> Opt
     stripped = (query or "").strip()
     if not stripped:
         return "Read-only mode: empty SQL is not allowed."
+    if reaches_outside(stripped):
+        return "Read-only mode: queries can only use this data source's own tables."
 
     try:
         ast_error = _assert_read_only_select_ast(stripped, dialect=dialect)
@@ -1098,6 +1101,19 @@ class MultiEngineQueryService:
                 "Row security could not be applied to this query."
             ) from exc
 
+    @staticmethod
+    async def _refuse_private_target(data_source: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """An error result when a database source points at an internal or private host (SaaS)."""
+        from src.shared.datasource_target import config_of_data_source, datasource_target_refusal, private_targets_allowed
+
+        if private_targets_allowed():
+            return None
+        config, kind = config_of_data_source(data_source or {})
+        reason = await datasource_target_refusal(config, kind) if kind else None
+        if not reason:
+            return None
+        return {"success": False, "error": reason, "data": [], "columns": [], "row_count": 0}
+
     async def execute_query(
         self,
         query: str,
@@ -1120,6 +1136,9 @@ class MultiEngineQueryService:
             return gate_error
 
         if str(execution_mode or "read").lower() == "write":
+            refused = await self._refuse_private_target(data_source)
+            if refused:
+                return refused
             err = check_sql_routine_ddl_safety(query)
             if err:
                 return {"success": False, "error": err, "data": [], "columns": [], "row_count": 0}
@@ -1163,6 +1182,10 @@ class MultiEngineQueryService:
                 "columns": [],
                 "row_count": 0,
             }
+        # Checked on the source that will actually be queried (after lakehouse routing).
+        refused = await self._refuse_private_target(data_source)
+        if refused:
+            return refused
 
         try:
             query, columns_omitted = await self._enforce_column_security(
@@ -1987,6 +2010,10 @@ class DuckDBEngine(BaseQueryEngine):
             elif data_source["type"] == "database":
                 await self._load_database_data(conn, data_source)
 
+            # The data is in. The shared lakehouse connection needs its files, so the check below guards it.
+            if data_source.get("type") != "lakehouse_iceberg":
+                lock_duckdb(conn)
+
             if not analysis.get("skip_read_only_check"):
                 _safety_error = check_sql_read_only_safety(query)
                 if _safety_error:
@@ -2452,7 +2479,10 @@ class SparkEngine(BaseQueryEngine):
                     logger.info("⚡ SparkEngine: connected via Databricks Connect")
                     return
                 except ImportError:
-                    logger.warning("databricks-connect not installed; falling back to Spark Connect")
+                    logger.warning(
+                        "Databricks Connect is an optional add-on and is not installed (see requirements-databricks.txt); "
+                        "trying Spark Connect"
+                    )
 
             if self._connect_url:
                 # Open-source Spark Connect (Spark 3.4+)
@@ -3164,6 +3194,7 @@ class PandasEngine(BaseQueryEngine):
                 conn = duckdb.connect()
                 try:
                     conn.register("data", df)
+                    lock_duckdb(conn)
                     sql = query
                     if "default.data" in sql or "default .data" in sql:
                         import re as _re

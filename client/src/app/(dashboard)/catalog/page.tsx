@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { PageLoading } from '@/components/ui/AppLoadingIndicator';
 import { useTranslations } from 'next-intl';
 import { ApartmentOutlined, RocketOutlined } from '@ant-design/icons';
 import { Button, Result } from 'antd';
@@ -8,8 +9,9 @@ import { isEnterpriseEdition } from '@/utils/appPaths';
 
 const isEE = isEnterpriseEdition();
 
-const EECatalogPage = dynamic(() => import('@/ee').then((m) => ({ default: m.CatalogPage })), {
+const EECatalogPage = dynamic(() => import('@/ee-lazy/CatalogPage').then((m) => ({ default: m.CatalogPage })), {
   ssr: false,
+  loading: PageLoading,
 });
 
 function CatalogCEFallback() {

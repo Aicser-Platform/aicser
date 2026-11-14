@@ -33,6 +33,16 @@ from ee.modules.embed import chat_router
 from ee.modules.embed.chat_auth import EmbedChatContext
 
 
+
+@pytest.fixture(autouse=True)
+def _no_org_tone(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from ee.modules.ai.services import answer_style
+
+    monkeypatch.setattr(answer_style, "tone_line", AsyncMock(return_value=""))
+
+
 def _ctx(**overrides) -> EmbedChatContext:
     defaults = dict(
         assistant_id=str(uuid.uuid4()),

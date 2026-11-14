@@ -277,12 +277,14 @@ def _create_govt(conn: duckdb.DuckDBPyConnection) -> None:
 
 def _create_ecommerce(conn: duckdb.DuckDBPyConnection) -> None:
     conn.execute("CREATE SCHEMA IF NOT EXISTS ecommerce")
-    n = ROW_COUNT
+    n = ROW_COUNT * 10  # the sandbox's sample shop: enough to look like a real business
+    # Uneven on purpose: a few best sellers and big customers, growth over time, few returns. Even data has no story.
+    conn.execute("SELECT setseed(0.42)")
     conn.execute(
         """
         CREATE OR REPLACE TABLE ecommerce.customers AS
         SELECT row_number() OVER () AS customer_id, 'Shopper ' || row_number() OVER () AS name
-        FROM range(1, 51)
+        FROM range(1, 201)
         """
     )
     conn.execute(
@@ -300,14 +302,15 @@ def _create_ecommerce(conn: duckdb.DuckDBPyConnection) -> None:
         """
         CREATE OR REPLACE TABLE ecommerce.orders AS
         SELECT
-            row_number() OVER () AS order_id,
-            (row_number() OVER () % 50) + 1 AS customer_id,
-            CAST('2024-01-01' AS DATE) + (row_number() OVER () * INTERVAL '2 days') AS order_date,
-            round(20 + (random() * 800), 2) AS order_total,
-            CASE (row_number() OVER () % 4)
-                WHEN 0 THEN 'pending' WHEN 1 THEN 'paid' WHEN 2 THEN 'shipped' ELSE 'returned'
-            END AS order_status
-        FROM range(1, ? + 1)
+            order_id,
+            1 + floor(200 * pow(c, 2))::INT AS customer_id,
+            CAST('2025-01-01' AS DATE) + (floor(600 * sqrt(d))::INT * INTERVAL '1 day') AS order_date,
+            round(20 + (t * t * 800), 2) AS order_total,
+            CASE WHEN s < 0.62 THEN 'shipped' WHEN s < 0.77 THEN 'paid' WHEN s < 0.91 THEN 'pending' ELSE 'returned' END AS order_status
+        FROM (
+            SELECT row_number() OVER () AS order_id, random() AS c, random() AS d, random() AS t, random() AS s
+            FROM range(1, ? + 1)
+        )
         """,
         [n],
     )
@@ -317,10 +320,10 @@ def _create_ecommerce(conn: duckdb.DuckDBPyConnection) -> None:
         SELECT
             row_number() OVER () AS line_id,
             (row_number() OVER () % ?) + 1 AS order_id,
-            (row_number() OVER () % 40) + 1 AS product_id,
+            1 + floor(40 * pow(random(), 2))::INT AS product_id,
             (1 + (row_number() OVER () % 5)) AS quantity,
             round(5 + (random() * 200), 2) AS unit_price
-        FROM range(1, 161)
+        FROM range(1, 3001)
         """,
         [n],
     )

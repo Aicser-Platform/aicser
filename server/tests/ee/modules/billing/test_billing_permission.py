@@ -61,8 +61,9 @@ async def test_self_hosted_skips_the_check():
     db.execute.assert_not_awaited()
 
 
-def test_admin_role_is_seeded_with_view_billing_not_manage():
+def test_admin_role_can_manage_billing_like_the_owner():
+    """Owners and admins are equal (only deleting the organization stays owner-only)."""
     from ee.modules.authentication.rbac.decorators import _ROLE_PERMISSION_PATTERNS
 
     admin = _ROLE_PERMISSION_PATTERNS["org_admin"]
-    assert "org:view_billing" in admin and "org:manage_billing" not in admin
+    assert "org:view_billing" in admin and "org:manage_billing" in admin and "org:delete" not in admin

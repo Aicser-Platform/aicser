@@ -1,0 +1,1 @@
+export { MasterDataPage } from '@/ee';

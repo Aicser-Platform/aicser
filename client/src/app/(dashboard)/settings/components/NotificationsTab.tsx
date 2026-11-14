@@ -1,3 +1,5 @@
+import { InfoHint } from '@/components/ui/InfoHint';
+import { PushToggle } from '@/components/notifications/PushToggle';
 import React, { useEffect } from 'react';
 import { Card, Form, Button, message, Divider, Typography, Alert } from 'antd';
 import { useRouter } from 'next/navigation';
@@ -54,10 +56,12 @@ export const NotificationsTab: React.FC<TabComponentProps> = ({ onSetAction }) =
       variant="borderless"
       style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
     >
-      <div style={{ marginBottom: 20 }}>
-        <Title level={5} style={{ margin: 0 }}>{t('notifications_communication_preferences')}</Title>
-        <Text type="secondary" style={{ fontSize: 13 }}>{t('notifications_section_sub')}</Text>
-      </div>
+      <Title level={5} style={{ margin: '0 0 20px' }}>
+        {t('notifications_communication_preferences')}
+        <InfoHint text={t('notifications_critical_note')} />
+      </Title>
+
+      <PushToggle />
 
       <NotificationForm form={form} onFinish={handleSubmit} />
 
@@ -69,7 +73,6 @@ export const NotificationsTab: React.FC<TabComponentProps> = ({ onSetAction }) =
           showIcon
           style={{ marginBottom: 16 }}
           message={t('notifications_outbound_hint_title')}
-          description={t('notifications_outbound_hint_desc')}
           action={
             <Button
               size="small"
@@ -81,10 +84,6 @@ export const NotificationsTab: React.FC<TabComponentProps> = ({ onSetAction }) =
           }
         />
       ) : null}
-
-      <Text type="secondary" style={{ fontSize: '12px' }}>
-        {t('notifications_critical_note')}
-      </Text>
     </Card>
   );
 };

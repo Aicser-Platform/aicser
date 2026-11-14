@@ -6,7 +6,7 @@ import { Card } from 'antd';
 export interface StatCardProps {
   /** Icon shown alongside the label. */
   icon: React.ReactNode;
-  /** Small uppercase muted label. */
+  /** Small muted label. */
   label: string;
   /** Large bold primary value. */
   value: React.ReactNode;
@@ -16,13 +16,13 @@ export interface StatCardProps {
 }
 
 /**
- * Generic, reusable stat tile — small uppercase label + icon, large value, optional hint.
+ * Generic, reusable stat tile — small label + icon, large value, optional hint.
  * Used across settings/admin surfaces wherever a quick metric needs a card.
  */
 export function StatCard({ icon, label, value, hint, className = '' }: StatCardProps) {
   return (
     <Card size="small" variant="outlined" className={`rounded-xl ${className}`}>
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ant-color-text-tertiary)]">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--ant-color-text-tertiary)]">
         <span className="shrink-0 text-sm leading-none">{icon}</span>
         <span>{label}</span>
       </div>

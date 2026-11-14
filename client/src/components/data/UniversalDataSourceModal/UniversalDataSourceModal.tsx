@@ -27,6 +27,7 @@ import { useTranslations } from 'next-intl';
 import {
   DatabaseOutlined,
   CloudOutlined,
+  ClusterOutlined,
   InboxOutlined,
   ApiOutlined,
   CheckCircleOutlined,
@@ -151,7 +152,7 @@ interface DataSourceConfig {
   description?: string;
 }
 
-const hiddenDataSourceTypes = new Set(['knowledge_base', 'sample_duckdb']);
+const hiddenDataSourceTypes = new Set(['knowledge_base', 'sample_duckdb', 'sensors']);
 
 const normalizeInitialDataSourceType = (
   type: UniversalDataSourceModalProps['initialDataSourceType'],
@@ -398,6 +399,14 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             icon: <ExperimentOutlined />,
             description: t('type_sample_duckdb_desc'),
             color: 'geekblue',
+          },
+          // Specialist, so last: most people connect files, databases or warehouses.
+          {
+            key: 'sensors',
+            label: t('type_sensors_label'),
+            icon: <ClusterOutlined />,
+            description: t('type_sensors_desc'),
+            color: 'cyan',
           },
         ]
       : []),
@@ -932,6 +941,15 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
 
   const handleDataSourceTypeSelect = (type: string) => {
     if (!IS_EE && hiddenDataSourceTypes.has(type)) return;
+    if (type === 'sensors') {
+      // Machines stream in rather than being queried: their form lives with the sensor list.
+      // The sensor list on Connections opens it; from any other page, go there first.
+      onClose();
+      const request = new CustomEvent('open-sensor-connection', { detail: { handled: false } });
+      window.dispatchEvent(request);
+      if (!request.detail.handled) window.location.assign('/data?connect=sensors');
+      return;
+    }
 
     setDataSourceConfig((prev) => ({
       ...prev,

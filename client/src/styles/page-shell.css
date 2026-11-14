@@ -12,7 +12,9 @@
 
 :root {
   --sidebar-width: 256px;
-  --app-header-height: 64px;
+  /* A standard app bar: 52px desktop (48px phones), 14px trail text. Was 64px with 18px chips, which
+     made the header the loudest thing on every page. The sidebar's logo row uses the same height. */
+  --app-header-height: 52px;
 }
 
 /* ── Root shell: sidebar rail + main column ───────────────── */
@@ -30,7 +32,7 @@
   height: 100dvh !important;
   width: auto !important;
   margin-left: var(--sidebar-width, 256px) !important;
-  padding-top: var(--app-header-height, 64px) !important;
+  padding-top: var(--app-header-height, 52px) !important;
   box-sizing: border-box !important;
   transition: margin-left 0.2s ease !important;
   overflow: hidden !important;
@@ -44,7 +46,7 @@
 
 body:has(.layout-app-header) .ant-drawer.ant-drawer-right,
 body:has(.layout-app-header) .ant-drawer.ant-drawer-left {
-  top: var(--app-header-height, 64px);
+  top: var(--app-header-height, 52px);
 }
 
 /* ── Fixed sidebar (custom SidebarNav, not Ant Menu) ──────── */
@@ -89,9 +91,9 @@ body:has(.layout-app-header) .ant-drawer.ant-drawer-left {
   left: var(--sidebar-width, 256px) !important;
   right: 0 !important;
   width: calc(100% - var(--sidebar-width, 256px)) !important;
-  height: var(--app-header-height, 64px) !important;
-  min-height: var(--app-header-height, 64px) !important;
-  max-height: var(--app-header-height, 64px) !important;
+  height: var(--app-header-height, 52px) !important;
+  min-height: var(--app-header-height, 52px) !important;
+  max-height: var(--app-header-height, 52px) !important;
   z-index: 1001 !important;
   margin: 0 !important;
   padding: 0 16px !important;
@@ -115,16 +117,16 @@ body:has(.layout-app-header) .ant-drawer.ant-drawer-left {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: flex-start !important;
-  gap: 10px !important;
-  height: 42px !important;
-  min-height: 42px !important;
-  max-height: 42px !important;
-  padding: 0 16px !important;
-  border-radius: 10px !important;
+  gap: 6px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  padding: 0 8px !important;
+  border-radius: 6px !important;
   border: 1px solid transparent !important;
   background: transparent !important;
   box-shadow: none !important;
-  font-size: 18px !important;
+  font-size: 14px !important;
   font-weight: 500 !important;
   line-height: 1 !important;
   color: var(--ant-color-text) !important;
@@ -145,10 +147,10 @@ body:has(.layout-app-header) .ant-drawer.ant-drawer-left {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 10px;
-  height: 42px;
-  padding: 0 16px;
-  font-size: 18px;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1;
   color: var(--ant-color-text);
@@ -170,7 +172,7 @@ body:has(.layout-app-header) .ant-drawer.ant-drawer-left {
 }
 
 .header-shell-chip-icon {
-  font-size: 20px !important;
+  font-size: 16px !important;
   flex-shrink: 0;
 }
 
@@ -182,8 +184,8 @@ body:has(.layout-app-header) .ant-drawer.ant-drawer-left {
 }
 
 .header-shell-chip-icon--logo {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   object-fit: contain;
   border-radius: 4px;
   display: block;
@@ -199,9 +201,9 @@ body:has(.layout-app-header) .ant-drawer.ant-drawer-left {
   /* Chevron reads as "org contains project" (breadcrumb convention) more clearly
      than a bare slash, which looks more like a URL/file-path separator. */
   color: var(--ant-color-text-tertiary);
-  font-size: 15px;
+  font-size: 12px;
   line-height: 1;
-  padding: 0 6px;
+  padding: 0 2px;
 }
 
 /* The current page, as the last step of the header trail (replaces the breadcrumb row). */
@@ -540,7 +542,7 @@ div.page-container,
 
 @media (max-width: 991.98px) {
   :root {
-    --app-header-height: 52px;
+    --app-header-height: 48px;
   }
 
   .layout-app-shell > .layout-main-column {
@@ -686,7 +688,6 @@ div.page-container,
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
   cursor: pointer;
 }
 

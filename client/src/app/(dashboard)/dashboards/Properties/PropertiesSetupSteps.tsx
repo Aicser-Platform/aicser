@@ -6,6 +6,7 @@ import { CheckCircleOutlined } from '@ant-design/icons';
 import { isContentWidgetType, isControlWidgetType } from './widgetPropertyProfile';
 import { useTranslations } from 'next-intl';
 import type { WidgetInstance } from '../stores/useDashboardStore';
+import { runsOwnSql } from '../utils/chartQueryMode';
 
 type Props = {
   widget: WidgetInstance | null;
@@ -19,11 +20,7 @@ export function PropertiesSetupSteps({ widget, onFocusSection }: Props) {
 
   const isSlicer = isControlWidgetType(widget.chartType);
   const hasSource = Boolean(widget.dataSourceId || (widget.chartQuery as { dataSourceId?: string })?.dataSourceId);
-  const hasSavedQuery = Boolean((widget.chartQuery as { saved_query_id?: unknown })?.saved_query_id);
-  const hasSampleSql = Boolean(
-    typeof widget.chartOptions?.sample_sql === 'string' && widget.chartOptions.sample_sql.trim(),
-  );
-  const hasSqlDataset = hasSavedQuery || hasSampleSql;
+  const hasSqlDataset = runsOwnSql(widget);
   const hasTable = Boolean(widget.chartQuery?.tableName) || hasSqlDataset;
   const hasFields = Boolean(
     (widget.chartQuery as { field?: string })?.field ||

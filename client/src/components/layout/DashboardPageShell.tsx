@@ -1,10 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Card, Empty, Typography } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
+import { Card, Empty, Tooltip, Typography } from 'antd';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 
-const { Text, Title } = Typography;
+const { Title } = Typography;
 
 export type DashboardPageShellProps = {
   children: React.ReactNode;
@@ -56,20 +57,19 @@ export function DashboardPageShell({
 export type DashboardPageHeaderProps = {
   title: React.ReactNode;
   description?: React.ReactNode;
+  /** Not drawn: a coloured icon tile beside the title appeared on some pages and not others. */
   icon?: React.ReactNode;
   extra?: React.ReactNode;
   sticky?: boolean;
 };
 
 /**
- * Page header — industry-standard two-row layout:
- * Row 1: [icon] Title ........................ Actions
- * Row 2: Subtitle
+ * Page header — the same on every page: Title (ⓘ for what it's about) ........ Actions.
+ * Words stay out of the way: the description opens from the ⓘ, the page keeps the row.
  */
 export function DashboardPageHeader({
   title,
   description,
-  icon,
   extra,
   sticky = false,
 }: DashboardPageHeaderProps) {
@@ -77,18 +77,21 @@ export function DashboardPageHeader({
     <header className={`page-header${sticky ? ' page-header--sticky' : ''}`}>
       <div className="page-header-top">
         <div className="page-header-leading">
-          {icon ? <span className="page-header-icon">{icon}</span> : null}
           <Title level={2} className="page-title">
             {title}
           </Title>
+          {description ? (
+            <Tooltip title={description} placement="bottomLeft">
+              <InfoCircleOutlined
+                className="page-header-info"
+                tabIndex={0}
+                aria-label={typeof description === 'string' ? description : undefined}
+              />
+            </Tooltip>
+          ) : null}
         </div>
         {extra ? <div className="page-header-actions">{extra}</div> : null}
       </div>
-      {description ? (
-        <Text type="secondary" className="page-description">
-          {description}
-        </Text>
-      ) : null}
     </header>
   );
 }

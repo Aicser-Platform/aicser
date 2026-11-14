@@ -203,7 +203,8 @@ async def test_scalar_count_skips_llm_and_does_not_invent_minmax_insights():
     summary = out.get("executive_summary") or ""
     assert (out.get("execution_metadata") or {}).get("insights_skipped_by_plan") is True
     assert "40" in summary
-    assert "there are 40" in summary.lower()
+    # Without a model the answer is the figure and its name, never a sentence guessed from the question's words.
+    assert summary == "Total customers: 40."
     assert "averages" not in summary.lower()
     assert "$" not in summary
     # One KPI card is intentional; must not invent min/max analyst cards.

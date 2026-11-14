@@ -170,6 +170,19 @@ class DashboardVersion(Base):
     created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
 
 
+class AssetRevision(Base):
+    """What a chart or alert was before a change. Assets with their own version tables (dashboards,
+    recipes, notebooks, sheets, models, documents) keep using those."""
+    __tablename__ = "asset_revisions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    asset_type = Column(String(20), nullable=False)
+    asset_id = Column(String(64), nullable=False, index=True)
+    snapshot = Column(JSONB, nullable=False)
+    created_by = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
+
+
 # Standalone Table definition for dashboard_widgets (not an ORM class)
 # This is used for raw SQL operations, bypassing SQLAlchemy's ORM mapper.
 metadata_obj = MetaData()

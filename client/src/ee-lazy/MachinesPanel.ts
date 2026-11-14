@@ -1,0 +1,1 @@
+export { MachinesPanel } from '@/ee';

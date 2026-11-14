@@ -50,6 +50,58 @@ server:
     timeoutSeconds: 5
     failureThreshold: 5
 
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Allows a slow first start (model download, migrations on a big database) without liveness restarts.
+  startupProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    periodSeconds: 10
+    failureThreshold: 30
+
+# Background jobs: alerts, schedules, Agent tasks, sensor readers, briefings, pipeline runs.
+# Without it the app looks fine and nothing runs in the background.
+worker:
+  enabled: true
+  replicaCount: 1        # jobs that must run once take a Redis lease, so more replicas are safe
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  env:
+    OTEL_SERVICE_NAME: aicser-worker
+
+# Database migrations run once per install/upgrade, before new pods start.
+migrations:
+  enabled: true
+  backoffLimit: 2
+
+# Files shared by server and worker (uploads, lake files, exports). Use a ReadWriteMany claim
+# (EFS, Azure Files, Filestore) or point lake/uploads at object storage and leave this off.
+persistence:
+  enabled: false
+  existingClaim: ""
+  mounts:
+    - subPath: uploads
+      mountPath: /app/uploads
+    - subPath: lake
+      mountPath: /app/lake
+
+# Keeps at least one pod of each serving during node drains and cluster upgrades.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
 client:
   image: ""            # e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/aicser-client:latest
   replicaCount: 2
@@ -83,6 +135,14 @@ client:
     periodSeconds: 15
     timeoutSeconds: 5
     failureThreshold: 5
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 3000
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
 
 ingress:
   enabled: false

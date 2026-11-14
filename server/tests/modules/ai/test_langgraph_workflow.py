@@ -450,7 +450,7 @@ def test_schema_retrieval_multi_table_subset():
     ]
     schema = {"type": "database", "tables": tables}
     subset = get_relevant_schema_subset(
-        schema, "sales revenue by region", data_source_type="database", max_tables=4
+        schema, "sales revenue by region", data_source_type="database", max_tables=4, min_tables_to_filter=5
     )
     assert subset is not None
     out_tables = subset.get("tables", [])

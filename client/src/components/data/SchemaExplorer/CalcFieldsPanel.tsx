@@ -98,7 +98,7 @@ export function CalcFieldsPanel({
                 ) : null,
                 canEdit ? (
                   <Tooltip title={t('calc_modal_delete')}>
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => void remove(item)} />
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={t('calc_modal_delete')} onClick={() => void remove(item)} />
                   </Tooltip>
                 ) : null,
               ].filter(Boolean)}

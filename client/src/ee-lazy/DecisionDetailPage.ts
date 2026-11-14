@@ -1,0 +1,1 @@
+export { DecisionDetailPage } from '@/ee';

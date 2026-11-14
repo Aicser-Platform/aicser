@@ -13,6 +13,8 @@ import { MARKETING_HOME_URL, PRIVACY_URL, TERMS_URL } from '@/constants/legalUrl
 import { PasswordStrengthMeter } from '@/components/auth/PasswordStrengthMeter';
 import type { SupabaseOAuthProvider } from '@/ee';
 import './login.css';
+import { TwoFactorStep } from '@/components/auth/TwoFactorStep';
+import { TWO_FACTOR_EVENT, TwoFactorRequiredError, pendingTwoFactor } from '@/auth/twoFactor';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +62,13 @@ interface ForgotPasswordValues {
 export default function LoginPage() {
   const t = useTranslations('auth');
   const searchParams = useSearchParams();
+  const [sandboxOn, setSandboxOn] = useState(false);
+  useEffect(() => {
+    fetch('/api/sandbox/config')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => setSandboxOn(Boolean(c?.enabled)))
+      .catch(() => undefined);
+  }, []);
   const initialSignUp =
     searchParams?.get('signup') === '1' ||
     searchParams?.get('mode') === 'signup' ||
@@ -108,7 +117,7 @@ export default function LoginPage() {
     const code = params.get('code');
     if (!code) return;
     setSsoLoading(true);
-    import('@/ee').then(async (mod) => {
+    import('@/ee-lazy/handleKeycloakCallback').then(async (mod) => {
       try {
         await mod.handleKeycloakCallback(code);
         router.push(getDefaultAppPath());
@@ -140,12 +149,12 @@ export default function LoginPage() {
           ['recovery', 'signup', 'magiclink', 'invite'].includes(hp.get('type') || '')));
     if (!hasCallback) return;
 
-    import('@/ee').then(async (mod) => {
+    import('@/ee-lazy/completeSupabaseRedirectSession').then(async (mod) => {
       const completed = await mod.completeSupabaseRedirectSession();
       if (completed) {
         useAuth.getState().init();
       }
-    });
+    }).catch(() => undefined); // a second step opens through TWO_FACTOR_EVENT
   }, [isAuthenticated]);
 
   const switchMode = useCallback(
@@ -167,6 +176,20 @@ export default function LoginPage() {
     [clearLoginError, router],
   );
 
+  const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setTwoFactorToken(pendingTwoFactor());
+    read();
+    window.addEventListener(TWO_FACTOR_EVENT, read);
+    return () => window.removeEventListener(TWO_FACTOR_EVENT, read);
+  }, []);
+
+  // Signed in now: init loads the account and the redirect above takes over.
+  const finishSignIn = () => {
+    setTwoFactorToken(null);
+    useAuth.getState().init();
+  };
+
   const onFinish = async (values: FormValues) => {
     clearLoginError();
     try {
@@ -186,8 +209,9 @@ export default function LoginPage() {
       const next = searchParams?.get('next');
       const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : getDefaultAppPath();
       router.push(dest);
-    } catch {
-      // loginError is set in the store
+    } catch (e) {
+      // loginError is set in the store; a second step isn't an error
+      if (e instanceof TwoFactorRequiredError) setTwoFactorToken(e.loginToken);
     }
   };
 
@@ -219,13 +243,27 @@ export default function LoginPage() {
     clearLoginError();
     setOauthLoadingProvider(provider);
     try {
-      const mod = await import('@/ee');
+      const mod = await import('@/ee-lazy/loginWithSupabaseOAuth');
       await mod.loginWithSupabaseOAuth(provider);
     } catch (err) {
       console.error(err);
       setOauthLoadingProvider(null);
     }
   };
+
+  if (twoFactorToken) {
+    return (
+      <div className="login-page">
+        <div className="login-form-section">
+          <div className="login-auth-panel">
+            <div className="form-card">
+              <TwoFactorStep loginToken={twoFactorToken} onDone={finishSignIn} onCancel={() => setTwoFactorToken(null)} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="login-page">
@@ -254,9 +292,6 @@ export default function LoginPage() {
                 { label: t('sign_up'), value: 'signup' },
               ]}
             />
-
-            <p className="form-subtitle">{isSignUp ? t('sign_up_subtitle') : t('sign_in_subtitle')}</p>
-
             {signupMessage ? (
               <Alert
                 type="success"
@@ -418,7 +453,7 @@ export default function LoginPage() {
                       onClick={async () => {
                         setSsoLoading(true);
                         try {
-                          const mod = await import('@/ee');
+                          const mod = await import('@/ee-lazy/loginWithKeycloak');
                           mod.loginWithKeycloak();
                         } catch {
                           setSsoLoading(false);
@@ -431,6 +466,8 @@ export default function LoginPage() {
                 ) : null}
               </>
             ) : null}
+
+            {sandboxOn ? <Link href="/try" className="auth-try-link">{t('try_without_account')}</Link> : null}
 
             <p className="terms-privacy-text">
               {t('terms_agree')}{' '}
@@ -454,13 +491,12 @@ export default function LoginPage() {
             <Link href="/discover">{t('explore_discover')}</Link>
           </p>
           <Image
-            src="/Aiser Demo Gif.gif"
+            src="/images/login-preview.png"
             alt={t('demo_alt')}
-            width={360}
-            height={300}
+            width={420}
+            height={232}
             className="demo-image"
             priority
-            unoptimized
           />
         </div>
       </div>

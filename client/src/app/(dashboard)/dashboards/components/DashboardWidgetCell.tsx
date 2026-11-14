@@ -1,5 +1,6 @@
 'use client';
 
+import { extractEchartsSnapshotOption } from '@/components/charts/resolveChatChart';
 import React from 'react';
 import { Alert, Button, Empty, Tooltip } from 'antd';
 import { FilterOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -23,6 +24,7 @@ import { inferFilterLabel } from '../utils/filterInference';
 import { isDateRuntimeFilter, type RuntimeFilter } from '../utils/filterOperators';
 import type { WidgetInstance } from '../stores/useDashboardStore';
 import { useDashboardStore } from '../stores/useDashboardStore';
+import { runsOwnSql } from '../utils/chartQueryMode';
 
 /** Whether a result has at least one row. Series with empty value arrays (a table or chart
  * whose query matched nothing) don't count, unlike a mere "has a data shape" check. */
@@ -91,10 +93,7 @@ export function DashboardWidgetCell({
   const noFieldsChosen =
     !isEmptyDataWidget(widget) &&
     Boolean(q.tableName) &&
-    !q.saved_query_id &&
-    !q.query_snapshot_id &&
-    !q.compiled_semantic_sql &&
-    !widget.chartOptions?.sample_sql &&
+    !runsOwnSql(widget) &&
     !['stat', 'gauge', 'text', 'image', 'embed', 'divider', 'slicer', 'filter'].includes(String(widget.chartType)) &&
     !q.x &&
     !(Array.isArray(q.yMetrics) && q.yMetrics.length > 0) &&
@@ -121,7 +120,11 @@ export function DashboardWidgetCell({
   // A data widget with no source/table is "not connected yet" whatever the fetch said — the
   // batch refresh returns a generic "No result" for it, which read as "Couldn't load data".
   // Unless it already carries data: feed snapshots keep only the captured chartData.
-  const notConnected = isEmptyDataWidget(widget as never) && !hasRenderableChartData(widget.chartData);
+  // Animated and custom chat charts keep their own saved chart instead of chartData.
+  const notConnected =
+    isEmptyDataWidget(widget as never) &&
+    !hasRenderableChartData(widget.chartData) &&
+    !extractEchartsSnapshotOption(widget.chartOptions as Record<string, unknown> | undefined);
 
   const chartReady =
     interactive && (onCrossFilter || onWidgetChartClick || chartInteractionMode === 'drill')

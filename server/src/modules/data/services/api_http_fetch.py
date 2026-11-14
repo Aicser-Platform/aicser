@@ -109,7 +109,10 @@ async def fetch_api_rows(
     timeout = max(5, min(120, int(merged.get("timeout", 30))))
     rows: List[Dict[str, Any]] = []
 
-    async with aiohttp.ClientSession() as session:
+    from src.shared.datasource_target import ensure_api_url_allowed, public_client_session
+
+    await ensure_api_url_allowed(url)
+    async with public_client_session() as session:
         if pagination == "none":
             async with session.request(
                 method,

@@ -1,12 +1,13 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { PageLoading } from '@/components/ui/AppLoadingIndicator';
 import { useTranslations } from 'next-intl';
 import { ApartmentOutlined, RocketOutlined } from '@ant-design/icons';
 import { Button, Result } from 'antd';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 
-const EELakeTablesPage = dynamic(() => import('@/ee').then((m) => ({ default: m.LakeTablesPage })), { ssr: false });
+const EELakeTablesPage = dynamic(() => import('@/ee-lazy/LakeTablesPage').then((m) => ({ default: m.LakeTablesPage })), { ssr: false, loading: PageLoading });
 
 function LakeTablesCEFallback() {
   const t = useTranslations('data_platform');

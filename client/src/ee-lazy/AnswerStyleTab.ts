@@ -1,0 +1,1 @@
+export { AnswerStyleTab } from '@/ee';

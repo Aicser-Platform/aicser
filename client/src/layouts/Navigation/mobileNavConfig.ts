@@ -43,11 +43,15 @@ const moreLink = (key: string): NavItemDef => ({ kind: 'link', key, labelKey: NA
 /** Everything not on a tab, in the sidebar's order and sections. */
 export function enterpriseMoreNavItems(): NavItemDef[] {
   return [
+    moreLink('agents'),
+    moreLink('agent'),
     moreLink('alerts'),
     { kind: 'divider' },
     moreLink('chart-designer'),
     moreLink('query-editor'),
     moreLink('sheets'),
+    moreLink('docs'),
+    moreLink('slides'),
     moreLink('notebooks'),
     ...(MAPS_ENABLED ? [moreLink('spatial')] : []),
     { kind: 'divider' },
@@ -58,7 +62,6 @@ export function enterpriseMoreNavItems(): NavItemDef[] {
     moreLink('pipelines'),
     moreLink('semantic-layer'),
     moreLink('catalog'),
-    moreLink('knowledge'),
     { kind: 'divider' },
     moreLink('settings'),
   ];
@@ -68,10 +71,11 @@ export function communityMoreNavItems(): NavItemDef[] {
   return [
     moreLink('chart-designer'),
     moreLink('sheets'),
+    moreLink('docs'),
+    moreLink('slides'),
     moreLink('notebooks'),
     ...(MAPS_ENABLED ? [moreLink('spatial')] : []),
     moreLink('prepare'),
-    moreLink('knowledge'),
     { kind: 'divider' },
     { kind: 'link', key: 'settings', labelKey: 'settings', href: NAV_ROUTES.settings },
   ];

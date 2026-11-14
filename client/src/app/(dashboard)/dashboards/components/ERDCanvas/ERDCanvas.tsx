@@ -15,7 +15,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import { useTranslations } from 'next-intl';
-import { Button, Empty, Input, Segmented, Typography } from 'antd';
+import { Button, Empty, Input, Segmented, Tooltip, Typography } from 'antd';
 import { ApartmentOutlined, RadarChartOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
 import { RelationshipDetailsPanel } from './RelationshipDetailsPanel';
 import { TableNode, type TableNodeData } from './TableNode';
@@ -428,24 +428,27 @@ export function ERDCanvas({
               { value: 'details', label: t('erd_details') },
             ]}
           />
-          <Button
-            className="erd-auto-layout-btn"
-            size="small"
-            icon={<ApartmentOutlined />}
-            onClick={handleAutoLayout}
-          >
-            {t('erd_auto_layout')}
-          </Button>
-          {onDetectRelationships ? (
+          {/* Icon buttons named on hover, as canvas toolbars do: labelled ones were squeezed under the search. */}
+          <Tooltip title={t('erd_auto_layout')}>
             <Button
               className="erd-auto-layout-btn"
               size="small"
-              icon={<RadarChartOutlined />}
-              loading={isDetectingRelationships}
-              onClick={onDetectRelationships}
-            >
-              {t('modeling_detect_relationships')}
-            </Button>
+              icon={<ApartmentOutlined />}
+              onClick={handleAutoLayout}
+              aria-label={t('erd_auto_layout')}
+            />
+          </Tooltip>
+          {onDetectRelationships ? (
+            <Tooltip title={t('modeling_detect_relationships')}>
+              <Button
+                className="erd-auto-layout-btn"
+                size="small"
+                icon={<RadarChartOutlined />}
+                loading={isDetectingRelationships}
+                onClick={onDetectRelationships}
+                aria-label={t('modeling_detect_relationships')}
+              />
+            </Tooltip>
           ) : null}
         </div>
         <Input

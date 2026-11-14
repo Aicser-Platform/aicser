@@ -212,7 +212,7 @@ const renderPreview = (preview: FeedAssetPreview, compact: boolean) => {
       <div className="w-full min-h-[140px] h-[180px] flex flex-col p-4 bg-[var(--ant-color-bg-container)] relative overflow-hidden">
         <div className="flex justify-between items-start mb-2 z-10 w-full">
           <div>
-            <div className="text-xs font-semibold text-[var(--ant-color-text-secondary)] uppercase tracking-wider mb-1">
+            <div className="text-xs font-semibold text-[var(--ant-color-text-secondary)] tracking-wider mb-1">
               Weekly Performance
             </div>
             <div className="text-2xl font-bold text-[var(--ant-color-text)] leading-tight">{latest}</div>

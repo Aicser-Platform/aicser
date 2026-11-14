@@ -1,0 +1,1 @@
+export { loginWithSupabaseOAuth } from '@/ee';

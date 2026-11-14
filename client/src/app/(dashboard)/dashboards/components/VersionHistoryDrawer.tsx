@@ -1,27 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import {
-  Drawer,
-  List,
-  Button,
-  Popconfirm,
-  Typography,
-  Space,
-  Input,
-  Empty,
-  Tag,
-  Tooltip,
-  Spin,
-  Alert,
-  message,
-} from 'antd';
-import {
-  HistoryOutlined,
-  DeleteOutlined,
-  UndoOutlined,
-  SaveOutlined,
-} from '@ant-design/icons';
+import { Alert, Button, Drawer, Input, Popconfirm, Space, Tooltip, Typography, message } from 'antd';
+import { DeleteOutlined, SaveOutlined } from '@ant-design/icons';
+import { useFormatter, useTranslations } from 'next-intl';
+import { HistoryList } from '@/components/history/HistoryList';
 import { useDashboardStore, type DashboardVersion } from '../stores/useDashboardStore';
 
 const { Text } = Typography;
@@ -31,18 +14,9 @@ interface VersionHistoryDrawerProps {
   onClose: () => void;
 }
 
-function relativeTime(epoch: number): string {
-  const diff = Date.now() - epoch;
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-}
-
 export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProps) {
+  const t = useTranslations('asset_history');
+  const format = useFormatter();
   const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
   const versions = useDashboardStore((s) => s.dashboardVersions);
   const isLoadingVersions = useDashboardStore((s) => s.isLoadingVersions);
@@ -69,9 +43,9 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
     try {
       await saveVersionSnapshot(label);
       setSnapshotLabel('');
-      message.success('Version snapshot saved');
+      message.success(t('snapshot_saved'));
     } catch {
-      message.error('Failed to save version snapshot');
+      message.error(t('snapshot_save_failed'));
     } finally {
       setIsSaving(false);
     }
@@ -81,10 +55,10 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
     setRestoringId(version.id);
     try {
       await restoreVersionSnapshot(version.id);
-      message.success(`Restored: ${version.label}`);
+      message.success(t('restored'));
       onClose();
     } catch {
-      message.error('Failed to restore this version');
+      message.error(t('restore_failed'));
     } finally {
       setRestoringId(null);
     }
@@ -95,144 +69,56 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
     try {
       await deleteVersionSnapshot(version.id);
     } catch {
-      message.error('Failed to delete this snapshot');
+      message.error(t('snapshot_delete_failed'));
     } finally {
       setDeletingId(null);
     }
   };
 
   return (
-    <Drawer
-      title={
-        <Space>
-          <HistoryOutlined />
-          Version History
-        </Space>
-      }
-      placement="right"
-      size={420}
-      open={open}
-      onClose={onClose}
-      styles={{ body: { padding: 0 } }}
-      extra={null}
-    >
-      {/* Save snapshot UI */}
-      <div style={{ padding: '16px 16px 0' }}>
-        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-          Save a named snapshot of the current dashboard layout. Snapshots are shared with your team and
-          kept on the server.
-        </Text>
-        <Space.Compact style={{ width: '100%' }}>
-          <Input
-            placeholder="Snapshot label (optional)"
-            value={snapshotLabel}
-            onChange={(e) => setSnapshotLabel(e.target.value)}
-            onPressEnter={handleSave}
-            maxLength={80}
-            disabled={isSaving}
-            prefix={<SaveOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />}
-          />
-          <Button type="primary" onClick={handleSave} loading={isSaving}>
-            Save
-          </Button>
-        </Space.Compact>
-      </div>
-
-      <div style={{ padding: '12px 16px 4px' }}>
-        <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Saved snapshots ({versions.length}/20)
-        </Text>
-      </div>
-
-      {versionsError && (
-        <div style={{ padding: '0 16px 12px' }}>
-          <Alert type="error" showIcon message={versionsError} />
-        </div>
-      )}
-
-      {isLoadingVersions && versions.length === 0 ? (
-        <div style={{ padding: 32, textAlign: 'center' }}>
-          <Spin />
-        </div>
-      ) : versions.length === 0 ? (
-        <div style={{ padding: 32 }}>
-          <Empty
-            description="No snapshots yet. Save one above to record the current state."
-            imageStyle={{ height: 48 }}
-          />
-        </div>
-      ) : (
-        <List
-          dataSource={versions}
-          renderItem={(v) => (
-            <List.Item
-              style={{ padding: '10px 16px', alignItems: 'flex-start' }}
-              // Keep the two action buttons pinned top-right instead of
-              // vertically centering against the (now often 2-line) title +
-              // description stack once the title wraps/truncates.
-              styles={{ actions: { alignItems: 'flex-start', marginInlineStart: 8 } }}
-              actions={[
-                <Tooltip title="Restore this snapshot" key="restore">
-                  <Popconfirm
-                    title="Restore this version?"
-                    description="The current layout will be auto-saved as a recovery point before restoring."
-                    onConfirm={() => handleRestore(v)}
-                    okText="Restore"
-                    cancelText="Cancel"
-                  >
-                    <Button
-                      type="text"
-                      size="small"
-                      className="icon-only-btn"
-                      icon={<UndoOutlined />}
-                      loading={restoringId === v.id}
-                      disabled={deletingId === v.id}
-                    />
-                  </Popconfirm>
-                </Tooltip>,
-                <Popconfirm
-                  key="delete"
-                  title="Delete this snapshot?"
-                  onConfirm={() => handleDelete(v)}
-                  okText="Delete"
-                  okButtonProps={{ danger: true }}
-                  cancelText="Cancel"
-                >
-                  <Button
-                    type="text"
-                    size="small"
-                    danger
-                    className="icon-only-btn icon-only-btn--danger"
-                    icon={<DeleteOutlined />}
-                    loading={deletingId === v.id}
-                    disabled={restoringId === v.id}
-                  />
-                </Popconfirm>,
-              ]}
-            >
-              <List.Item.Meta
-                title={
-                  <Tooltip title={v.label} placement="topLeft" mouseEnterDelay={0.4}>
-                    <Text style={{ fontSize: 13, fontWeight: 500, display: 'block' }} ellipsis>
-                      {v.label}
-                    </Text>
-                  </Tooltip>
-                }
-                description={
-                  <Space size={4} wrap>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      {relativeTime(v.savedAt)}
-                    </Text>
-                    <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>
-                      {v.widgetCount} widget{v.widgetCount !== 1 ? 's' : ''}
-                    </Tag>
-                  </Space>
-                }
-              />
-            </List.Item>
-          )}
+    <Drawer title={t('title')} width={420} open={open} onClose={onClose}>
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>{t('snapshot_hint')}</Text>
+      <Space.Compact style={{ width: '100%', marginBottom: 16 }}>
+        <Input
+          placeholder={t('snapshot_label')}
+          value={snapshotLabel}
+          onChange={(e) => setSnapshotLabel(e.target.value)}
+          onPressEnter={handleSave}
+          maxLength={80}
+          disabled={isSaving}
+          prefix={<SaveOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />}
         />
-      )}
+        <Button type="primary" onClick={handleSave} loading={isSaving}>{t('snapshot_save')}</Button>
+      </Space.Compact>
+      {versionsError ? <Alert type="error" showIcon message={versionsError} style={{ marginBottom: 12 }} /> : null}
+      <HistoryList
+        loading={isLoadingVersions && versions.length === 0}
+        restoreLabel={t('restore')}
+        emptyLabel={t('snapshot_empty')}
+        restoringId={restoringId}
+        onRestore={(id) => {
+          const version = versions.find((v) => v.id === id);
+          if (version) void handleRestore(version);
+        }}
+        entries={versions.map((v) => ({
+          id: v.id,
+          title: v.label,
+          disabled: deletingId === v.id,
+          detail: `${format.relativeTime(new Date(v.savedAt))} · ${t('snapshot_charts', { count: v.widgetCount })}`,
+          extra: (
+            <Popconfirm
+              title={t('snapshot_delete_title')}
+              onConfirm={() => handleDelete(v)}
+              okText={t('snapshot_delete')}
+              okButtonProps={{ danger: true }}
+            >
+              <Tooltip title={t('snapshot_delete')}>
+                <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={t('snapshot_delete')} loading={deletingId === v.id} />
+              </Tooltip>
+            </Popconfirm>
+          ),
+        }))}
+      />
     </Drawer>
   );
 }

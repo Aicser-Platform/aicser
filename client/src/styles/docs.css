@@ -1,0 +1,280 @@
+/* Docs editor (src/components/docs): the page is "paper" (document colours, the same in light and dark mode, like
+   Word). TipTap's own stylesheet is off (injectCSS: false, as on desktop where its <style> tag would break the CSP), so the base
+   ProseMirror rules it needs are here too. */
+
+.doc-page {
+  /* Paper: the sheets behind it are white in light and dark mode. */
+  font-family: Calibri, Carlito, 'Noto Sans Khmer Variable', sans-serif;
+  font-size: 11pt;
+  line-height: 1.5;
+  color-scheme: light;
+}
+
+.doc-content {
+  /* Pagination measures blocks against this box. */
+  position: relative;
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-variant-ligatures: none;
+  min-height: 100%;
+}
+
+.doc-content > * + * {
+  margin-top: 0.5em;
+}
+
+.doc-content h1 {
+  font-size: 20pt;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1em;
+}
+.doc-content h2 {
+  font-size: 16pt;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-top: 0.9em;
+}
+.doc-content h3 {
+  font-size: 13pt;
+  font-weight: 700;
+  margin-top: 0.8em;
+}
+.doc-content h4 {
+  font-size: 12pt;
+  font-weight: 700;
+  font-style: italic;
+}
+.doc-content > :first-child {
+  margin-top: 0;
+}
+
+.doc-content ul,
+.doc-content ol {
+  padding-left: 1.6em;
+}
+.doc-content ul {
+  list-style: disc;
+}
+.doc-content ul ul {
+  list-style: circle;
+}
+.doc-content ol {
+  list-style: decimal;
+}
+.doc-content ol ol {
+  list-style: lower-alpha;
+}
+.doc-content ol ol ol {
+  list-style: lower-roman;
+}
+.doc-content li > p {
+  margin: 0;
+}
+
+.doc-content ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.doc-content ul[data-type='taskList'] li {
+  display: flex;
+  gap: 0.5em;
+  align-items: flex-start;
+}
+.doc-content ul[data-type='taskList'] li > label {
+  flex: none;
+  user-select: none;
+  margin-top: 0.2em;
+}
+.doc-content ul[data-type='taskList'] li > div {
+  flex: 1;
+}
+.doc-content ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: rgb(0 0 0 / 0.5);
+  text-decoration: line-through;
+}
+
+.doc-content blockquote {
+  border-left: 3px solid rgb(0 0 0 / 0.2);
+  padding-left: 1em;
+  color: rgb(0 0 0 / 0.7);
+}
+
+.doc-content pre {
+  background: rgb(0 0 0 / 0.05);
+  border-radius: 4px;
+  padding: 0.75em 1em;
+  font-family: 'Roboto Mono Variable', 'Courier New', monospace;
+  font-size: 10pt;
+  white-space: pre-wrap;
+}
+.doc-content code {
+  font-family: 'Roboto Mono Variable', 'Courier New', monospace;
+  background: rgb(0 0 0 / 0.05);
+  border-radius: 3px;
+  padding: 0.1em 0.25em;
+  font-size: 0.92em;
+}
+.doc-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.doc-content hr {
+  border: none;
+  border-top: 1px solid rgb(0 0 0 / 0.25);
+  margin: 1em 0;
+}
+.doc-content hr.ProseMirror-selectednode {
+  border-top-color: rgb(var(--ui-ring));
+}
+
+.doc-content a {
+  color: rgb(17 85 204);
+  text-decoration: underline;
+  cursor: text;
+}
+
+.doc-content mark {
+  border-radius: 1px;
+  padding: 0 0.05em;
+  color: inherit;
+}
+
+.doc-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.doc-content img.ProseMirror-selectednode,
+.doc-content [data-resize-container].ProseMirror-selectednode {
+  outline: 2px solid rgb(var(--ui-ring));
+}
+.doc-content [data-resize-handle] {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: white;
+  border: 1px solid rgb(var(--ui-ring));
+  border-radius: 2px;
+  z-index: 1;
+}
+
+/* Tables (TableKit, resizable columns). */
+.doc-content .tableWrapper {
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+.doc-content table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+.doc-content td,
+.doc-content th {
+  border: 1px solid rgb(0 0 0 / 0.3);
+  padding: 4px 8px;
+  vertical-align: top;
+  position: relative;
+  min-width: 2em;
+}
+.doc-content th {
+  background: rgb(0 0 0 / 0.05);
+  font-weight: 700;
+  text-align: left;
+}
+.doc-content td > p,
+.doc-content th > p {
+  margin: 0;
+}
+.doc-content .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(66 133 244 / 0.15);
+  pointer-events: none;
+}
+.doc-content .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background: rgb(66 133 244 / 0.6);
+  pointer-events: none;
+}
+.doc-content.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Empty-document hint (Placeholder extension). */
+.doc-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: rgb(0 0 0 / 0.4);
+}
+
+/* ProseMirror base rules (TipTap's injected CSS, which the CSP blocks). */
+.doc-content .ProseMirror-gapcursor {
+  display: none;
+  pointer-events: none;
+  position: absolute;
+}
+.doc-content .ProseMirror-gapcursor::after {
+  content: '';
+  display: block;
+  position: absolute;
+  top: -2px;
+  width: 20px;
+  border-top: 1px solid black;
+  animation: doc-cursor-blink 1.1s steps(2, start) infinite;
+}
+@keyframes doc-cursor-blink {
+  to {
+    visibility: hidden;
+  }
+}
+.doc-content.ProseMirror-focused .ProseMirror-gapcursor {
+  display: block;
+}
+.doc-content .ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+.doc-content img.ProseMirror-separator {
+  display: inline !important;
+  border: none !important;
+  margin: 0 !important;
+}
+
+/* Pages (lib/docs/pagination.ts): the blank space that moves a block to the next page. No margin of its own, so
+   the measured layout adds up exactly. */
+.doc-content .doc-page-gap {
+  margin: 0 !important;
+  pointer-events: none;
+}
+
+/* A page break: a marker line in the editor (not in the .docx). */
+.doc-content .doc-page-break {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  margin-block: 0.5em;
+  color: rgb(0 0 0 / 0.45);
+  font-family: 'Inter Variable', sans-serif;
+  font-size: 8pt;
+  user-select: none;
+  cursor: default;
+}
+.doc-content .doc-page-break::before,
+.doc-content .doc-page-break::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed rgb(0 0 0 / 0.3);
+}
+.doc-content .doc-page-break.ProseMirror-selectednode {
+  color: rgb(var(--ui-ring));
+}

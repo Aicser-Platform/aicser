@@ -263,6 +263,48 @@ async def evaluate_alert_rules(ctx: Dict[str, Any]) -> Dict[str, Any]:
         raise
 
 
+async def run_publishing_housekeeping(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron: end public items past their date and remind approvers once."""
+    from src.db.session import async_session
+    from src.modules.feed.service import FeedService
+
+    async with async_session() as db:
+        return await FeedService(db).publishing_housekeeping()
+
+
+async def run_compliance_jobs(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (every minute): stream audit events to each organization's SIEM; once an hour apply audit retention (EE)."""
+    from src.core.edition import is_ee_enabled
+
+    if not is_ee_enabled():
+        return {"skipped": True}
+    from src.modules.platform.compliance import run_all
+
+    return await run_all(purge=datetime.utcnow().minute == 17)
+
+
+async def run_plant_machine_health(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron: score every machine against its own history (EE Plant)."""
+    from src.core.edition import is_ee_enabled
+
+    if not is_ee_enabled():
+        return {"skipped": True}
+    from src.modules.plant.health_job import score_all
+
+    return await score_all()
+
+
+async def compact_plant_lake(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (daily): merge yesterday's small sensor files and expire old snapshots (EE Plant)."""
+    from src.core.edition import is_ee_enabled
+
+    if not is_ee_enabled():
+        return {"skipped": True}
+    from src.modules.plant.health_job import compact_all
+
+    return await compact_all()
+
+
 async def refresh_artifact_data(
     ctx: Dict[str, Any],
     data_source_id: str,
@@ -834,6 +876,15 @@ async def run_scheduled_ai_decisions(ctx: Dict[str, Any]) -> Dict[str, Any]:
     return await run_due_decisions()
 
 
+async def run_due_quality_tests(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (hourly): run Catalog quality tests that are due; failures open incidents (EE)."""
+    try:
+        from src.modules.catalog.quality_tests import run_due_tests
+    except Exception:
+        return {"skipped": "Quality tests are part of the Enterprise edition"}
+    return await run_due_tests()
+
+
 async def train_ml_model(ctx: Dict[str, Any], version_id: str) -> Dict[str, Any]:
     """On-demand: train one model version (EE Models). Reads data as the model's creator."""
     try:
@@ -913,3 +964,59 @@ async def run_due_workbook_schedules(ctx: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         return {"skipped": "Scheduled workbook runs are part of the Enterprise edition"}
     return await run_due_schedules()
+
+
+async def run_agent_task(ctx: Dict[str, Any], run_id: str, decided: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """On-demand: run (or resume) one Aicser Agent task until it finishes or waits for the person (EE)."""
+    try:
+        from src.modules.agent.loop import run_agent
+    except Exception:
+        return {"skipped": "Aicser Agent is part of the Enterprise edition"}
+    return {"status": await run_agent(run_id, decided=decided)}
+
+
+async def resume_stalled_agent_tasks(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (every 5 minutes): re-queue agent tasks a crashed worker left running (EE)."""
+    try:
+        from src.modules.agent.service import resume_stalled
+    except Exception:
+        return {"skipped": "Aicser Agent is part of the Enterprise edition"}
+    return await resume_stalled()
+
+
+async def run_due_agent_schedules(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (every minute): start Aicser Agent schedules that are due (EE)."""
+    try:
+        from src.modules.agent.schedules import run_due
+    except Exception:
+        return {"skipped": "Aicser Agent is part of the Enterprise edition"}
+    return await run_due()
+
+
+async def agent_daily_upkeep(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (daily): pause org agents whose owner left, and apply each organization's run retention (EE)."""
+    try:
+        from src.modules.agent.compliance import purge_expired
+        from src.modules.agent.org_agents import pause_orphans
+    except Exception:
+        return {"skipped": "Aicser Agent is part of the Enterprise edition"}
+    return {**await pause_orphans(), **await purge_expired()}
+
+
+async def bill_platform_overage(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (monthly): add last month's platform overage to Stripe invoices (EE SaaS)."""
+    try:
+        from src.modules.pricing.platform_usage import bill_previous_month
+    except Exception:
+        return {"skipped": "Platform metering is part of the Enterprise edition"}
+    return await bill_previous_month()
+
+
+async def issue_pending_personal_licenses(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (every 15 minutes): issue paid Aicser Personal licenses the license server has not issued yet."""
+    try:
+        from src.modules.pricing.personal_license import issue_pending
+    except Exception:
+        return {"skipped": "Aicser Personal is part of the Enterprise edition"}
+    return await issue_pending()
+

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from ee.modules.notebook_runs.schedule import next_run
+from src.shared.schedule_math import next_run
 
 UTC = timezone.utc
 

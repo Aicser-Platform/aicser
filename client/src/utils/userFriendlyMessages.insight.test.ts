@@ -150,6 +150,26 @@ describe('repairCollapsedMarkdown', () => {
     expect(fixed).not.toContain('\\n');
   });
 
+  it('keeps a well-formed table of 3+ columns exactly as written (agent answer that was re-flowed)', () => {
+    const answer =
+      'Here is a full picture of your NPL problem.\n\n## Where the NPLs are\n\n' +
+      '| Branch | NPL rate | Outstanding | Avg rate |\n|---|---|---|---|\n' +
+      '| Branch 5 | 22.5% | 1.16M | 10% |\n| Branch 3 | 21.1% | 0.93M | 11% |\n| Branch 2 | 0.3% | 0.93M | 11% |\n\n' +
+      'Portfolio total: 16 NPL loans.\n\n**Three patterns worth acting on:**\n- **Branch concentration:** most of it.';
+    const fixed = repairCollapsedMarkdown(answer);
+    expect(fixed).toContain(
+      '| Branch | NPL rate | Outstanding | Avg rate |\n|---|---|---|---|\n| Branch 5 | 22.5% | 1.16M | 10% |\n',
+    );
+    expect(fixed).toBe(answer);
+  });
+
+  it('still repairs collapsed text around a well-formed table', () => {
+    const mixed = 'Intro. ## Findings\n\n| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |\n\nDone.';
+    const fixed = repairCollapsedMarkdown(mixed);
+    expect(fixed).toContain('Intro.\n\n## Findings');
+    expect(fixed).toContain('| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 |');
+  });
+
   it('leaves already well-formed markdown alone', () => {
     const good = 'Intro paragraph.\n\n## Section\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n- bullet';
     expect(repairCollapsedMarkdown(good)).toBe(good.trim());

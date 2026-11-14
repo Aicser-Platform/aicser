@@ -3,34 +3,20 @@
 import dynamic from 'next/dynamic';
 import { Suspense, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Modal, Spin } from 'antd';
+import { Button, Modal } from 'antd';
+import { ChatPageSkeleton } from '@/components/ui/ChatPageSkeleton';
 import { useTranslations } from 'next-intl';
 import { useAiAvailability } from '@/hooks/useAiAvailability';
 import { asDynamicModule } from '@/utils/asDynamicModule';
 
-function ChatPageFallback() {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '60vh',
-      }}
-    >
-      <Spin size="large" />
-    </div>
-  );
-}
-
 const EEChatPage = dynamic(
   () =>
     import('../../../ee/chat-page').then((m) =>
-      asDynamicModule(m, ChatPageFallback),
+      asDynamicModule(m, ChatPageSkeleton),
     ),
   {
     ssr: false,
-    loading: ChatPageFallback,
+    loading: ChatPageSkeleton,
   },
 );
 
@@ -47,19 +33,16 @@ export default function ChatPageClient() {
     }
   }, [aiAvailability.configured, aiAvailability.loading, router]);
 
-  if (aiAvailability.loading) {
-    return <ChatPageFallback />;
-  }
-
   // Gate on "a key is configured", not "the last live validation call happened to
   // succeed" — a transient provider hiccup or rate limit shouldn't lock a user with
   // a working key out of chat entirely (they'll get a real error at the point of
   // use if something is actually wrong).
-  if (!aiAvailability.configured) {
+  // Only that case needs the answer, so nobody waits for it before the page loads.
+  if (!aiAvailability.loading && !aiAvailability.configured) {
     return (
       <div className="relative min-h-screen">
         <div aria-hidden className="pointer-events-none min-h-screen select-none blur-[4px]">
-          <Suspense fallback={<ChatPageFallback />}>
+          <Suspense fallback={<ChatPageSkeleton />}>
             <EEChatPage />
           </Suspense>
         </div>
@@ -97,7 +80,7 @@ export default function ChatPageClient() {
   }
 
   return (
-    <Suspense fallback={<ChatPageFallback />}>
+    <Suspense fallback={<ChatPageSkeleton />}>
       <EEChatPage />
     </Suspense>
   );

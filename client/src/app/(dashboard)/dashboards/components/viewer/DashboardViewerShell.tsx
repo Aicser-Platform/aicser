@@ -380,7 +380,9 @@ export function DashboardViewerShell({
               <Button
                 size="small"
                 shape="circle"
-                icon={exportBusy ? <LoadingOutlined spin /> : <DownloadOutlined />}
+                icon={exportBusy ? <LoadingOutlined spin
+                aria-label={t('export_menu')}
+/> : <DownloadOutlined />}
                 aria-label={t('export_menu')}
                 aria-haspopup="menu"
               />

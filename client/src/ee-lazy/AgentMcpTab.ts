@@ -1,0 +1,1 @@
+export { AgentMcpTab } from '@/ee';

@@ -1,0 +1,1 @@
+export { InviteSetPasswordPageEE } from '@/ee';

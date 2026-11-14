@@ -1,0 +1,1 @@
+export { SemanticStudio } from '@/ee';

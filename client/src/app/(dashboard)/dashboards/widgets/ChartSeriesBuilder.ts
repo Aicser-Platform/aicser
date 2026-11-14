@@ -641,6 +641,8 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
   // generic 'Distribution' placeholder) as this series' identity is what lets
   // a conditional-formatting rule authored against that column actually match.
   const seriesName = data.series?.[0]?.name || 'Distribution';
+  // Slices need names somewhere: with the legend off, labels stay on.
+  const sliceLabels = !isZeroSum && (config.showDataLabel || config.showLegend === false);
 
   return {
     name: seriesName,
@@ -649,7 +651,7 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
     center,
     itemStyle: { borderRadius: 4, borderColor: sliceBorder, borderWidth: 2 },
     label: {
-      show: config.showDataLabel && !isZeroSum,
+      show: sliceLabels,
       formatter: (params: any) => {
         if (params.name && params.value !== undefined) {
           // Calculate percentage
@@ -666,7 +668,7 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
           : (config.axisLabelColor ?? CHART_COLORS.text.primary),
     },
     labelLine: {
-      show: config.showDataLabel && !isZeroSum,
+      show: sliceLabels,
       lineStyle: { color: CHART_COLORS.text.secondary },
     },
     emphasis: {

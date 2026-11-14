@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Literal, Optional
 import yaml
 from pydantic import BaseModel, model_validator
 
+from src.shared.sql_guard import reaches_outside
+
 from src.modules.prep.engine.steps import (CompileContext, Step,
                                            ValidateStep, parse_step)
 
@@ -56,6 +58,18 @@ def _disabled(raw: Dict[str, Any]) -> bool:
     return isinstance(payload, dict) and bool(payload.get("disabled"))
 
 
+def _texts(value: Any):
+    """Every string in a step, however deep."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _texts(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _texts(item)
+
+
 def compile_steps(
     steps: List[Dict[str, Any]],
     *,
@@ -65,6 +79,10 @@ def compile_steps(
 ) -> CompiledSteps:
     """Compile a step list over ``source_sql``. Errors name the failing step."""
     steps_raw = steps if up_to_step is None else steps[:up_to_step]
+    # The source is ours and may read files; what people type into a step may not.
+    for i, raw in enumerate(steps_raw):
+        if any(reaches_outside(text) for text in _texts(raw)):
+            raise ValueError(f"step {i}: steps can only use the data they are given")
     # A switched-off step stays in the list (and keeps its number) but does nothing.
     steps_raw = [{"sql": {"query": "SELECT * FROM {input}"}} if _disabled(raw) else raw for raw in steps_raw]
 

@@ -164,7 +164,7 @@ async def test_generate_completion_headroom_retry_on_length(monkeypatch):
     assert calls["n"] == 2
     assert calls["retry_max"] >= 2048
     # Empty/length retry must use shortened wall budget (not another full 60s).
-    assert calls["retry_timeout"] == 20.0
+    assert calls["retry_timeout"] == 36.0  # 60% of the 60 s budget (timeout_fallback_for)
     assert result["success"] is True
     assert "Revenue trend" in (result.get("content") or "")
 

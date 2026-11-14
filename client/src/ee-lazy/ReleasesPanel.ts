@@ -1,0 +1,1 @@
+export { ReleasesPanel } from '@/ee';

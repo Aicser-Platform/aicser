@@ -58,6 +58,24 @@ interface UsePermissionsReturn {
  * }
  * ```
  */
+// A page mounts this hook in many components; they share one request and its answer for a moment.
+const SHARED_FOR_MS = 30_000;
+const sharedPermissions = new Map<string, { at: number; result: Promise<PermissionFetch> }>();
+type PermissionFetch = { status: number; permissions: Permission[] };
+
+function loadPermissions(key: string, load: () => Promise<PermissionFetch>, force: boolean): Promise<PermissionFetch> {
+  const known = sharedPermissions.get(key);
+  if (known && !force && Date.now() - known.at < SHARED_FOR_MS) return known.result;
+  const result = load();
+  sharedPermissions.set(key, { at: Date.now(), result });
+  result
+    .then((r) => {
+      if (r.status !== 200) sharedPermissions.delete(key);
+    })
+    .catch(() => sharedPermissions.delete(key));
+  return result;
+}
+
 export function usePermissions(options: UsePermissionsOptions = {}): UsePermissionsReturn {
   const { user, isAuthenticated, session } = useAuth();
   const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
@@ -76,7 +94,7 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
     return currentProject?.id != null ? String(currentProject.id) : undefined;
   }, [options.projectId, currentProject?.id]);
 
-  const fetchPermissions = useCallback(async () => {
+  const fetchPermissions = useCallback(async (force = false) => {
     if (!IS_EE) {
       setPermissions(CE_PERMISSIONS);
       setLoading(false);
@@ -110,31 +128,39 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
         headers['Authorization'] = `Bearer ${bearer}`;
       }
 
-      const response = await fetch(`/api/rbac/me/permissions?${params.toString()}`, {
-        cache: 'no-store',
-        method: 'GET',
-        credentials: 'include',
-        headers,
-      });
+      const { status, permissions: permissionValues } = await loadPermissions(
+        `${user.id}:${params.toString()}`,
+        async () => {
+          const response = await fetch(`/api/rbac/me/permissions?${params.toString()}`, {
+            cache: 'no-store',
+            method: 'GET',
+            credentials: 'include',
+            headers,
+          });
+          if (!response.ok) return { status: response.status, permissions: [] };
+          const data = await response.json();
+          return {
+            status: 200,
+            permissions: (Array.isArray(data?.permissions) ? data.permissions : []).map((p: string) => p as Permission),
+          };
+        },
+        force,
+      );
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          setError('Authentication required');
-          setPermissions([]);
-          return;
-        }
-        if (response.status === 403) {
-          setError('Permission denied');
-          setPermissions([]);
-          return;
-        }
-        throw new Error(`Failed to fetch permissions: ${response.status}`);
+      if (status === 401) {
+        setError('Authentication required');
+        setPermissions([]);
+        return;
+      }
+      if (status === 403) {
+        setError('Permission denied');
+        setPermissions([]);
+        return;
+      }
+      if (status !== 200) {
+        throw new Error(`Failed to fetch permissions: ${status}`);
       }
 
-      const data = await response.json();
-      const permissionValues = (Array.isArray(data?.permissions) ? data.permissions : []).map(
-        (p: string) => p as Permission
-      );
       setPermissions(permissionValues);
     } catch (err) {
       console.error('Error fetching permissions:', err);
@@ -181,7 +207,7 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
     hasAllPermissions,
     loading,
     error,
-    refetch: fetchPermissions,
+    refetch: () => fetchPermissions(true),
   };
 }
 

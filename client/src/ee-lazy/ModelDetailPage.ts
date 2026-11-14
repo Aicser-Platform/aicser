@@ -1,0 +1,1 @@
+export { ModelDetailPage } from '@/ee';

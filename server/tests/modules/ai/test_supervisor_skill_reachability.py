@@ -341,7 +341,8 @@ async def test_decision_intelligence_not_shadowed_by_agent_kernel():
     state["agent_context"] = {"analysis_mode": "decision_intelligence"}
     out = await supervisor_node(state, litellm_service=mock)
 
-    assert out["current_stage"] == "routed_to_nl2sql"
+    # With no tables to choose a metric from it asks first; either way the kernel didn't claim it.
+    assert out["current_stage"] in ("routed_to_nl2sql", "supervisor_needs_clarification")
     assert out["analytics_type"] == "diagnostic_prescriptive_predictive"
     assert out["execution_metadata"]["analysis_mode"] == "decision_intelligence"
 

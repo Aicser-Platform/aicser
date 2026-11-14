@@ -1,0 +1,1 @@
+export { AgentWorkflowsTab } from '@/ee';

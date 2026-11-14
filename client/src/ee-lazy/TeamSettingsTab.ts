@@ -1,0 +1,1 @@
+export { TeamSettingsTab } from '@/ee';

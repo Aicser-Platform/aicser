@@ -86,6 +86,9 @@ class FeedPost(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     published_at = Column(DateTime(timezone=True), nullable=True)
+    # Public items end here (organization setting); the owner keeps them privately.
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    approval_reminded_at = Column(DateTime(timezone=True), nullable=True)
     last_activity_at = Column(DateTime(timezone=True), nullable=True)
 
     featured = Column(Boolean, nullable=False, server_default=text("false"))

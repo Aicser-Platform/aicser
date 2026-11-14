@@ -28,7 +28,7 @@ export function buildKnowledgeCitationHref(params: KnowledgeCitationLinkParams):
   if (params.pages?.trim()) q.set('pages', params.pages.trim().slice(0, 40));
   q.set('tab', 'documents');
   q.set('from', 'citation');
-  return `/knowledge?${q.toString()}`;
+  return `/data?${q.toString()}`;
 }
 
 export function resolveCitationChunkId(citation: {

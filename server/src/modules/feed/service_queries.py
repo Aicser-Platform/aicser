@@ -1424,8 +1424,9 @@ class FeedServiceQueryMixin:
                 )
             )
 
-        if org_owner_ids:
-            public_scope_ids = {organization_id} if organization_id else org_owner_ids
+        # Owners and admins are equal approvers of public work.
+        if org_owner_ids or org_admin_ids:
+            public_scope_ids = {organization_id} if organization_id else (org_owner_ids | org_admin_ids)
             visibility_filters.append(
                 and_(
                     FeedPost.visibility == FeedVisibility.public.value,
@@ -1488,6 +1489,7 @@ class FeedServiceQueryMixin:
             queue_items.append(
                 ApprovalQueueItem(
                     id=str(post.id),
+                    possiblePersonalData=bool((post.preview_metadata or {}).get("possible_personal_data")),
                     item=feed_item,
                     submittedAt=_to_iso(post.last_activity_at or post.updated_at or post.created_at),
                     visibility=typed_visibility,

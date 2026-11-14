@@ -7,9 +7,9 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { NAV_LABEL_KEYS, NAV_ROUTES, selectedKeyForPathname } from './navConfig';
 
 /**
- * The current page, as the last step of the header's "organization › project" trail, instead of
- * a breadcrumb row of its own. Inside an item (a sheet, a notebook, a dashboard) it links back
- * to the list. Uses the sidebar's labels (NAV_LABEL_KEYS) so the two never drift apart.
+ * The way back to a list from inside one of its items (a sheet, a notebook, a model), as the last
+ * step of the header's "organization › project" trail. On the list page itself it is left out: the
+ * page title already names it and the sidebar shows where you are. Uses the sidebar's labels.
  */
 export function HeaderPageCrumb({ withSeparator }: { withSeparator: boolean }) {
   const t = useTranslations('nav');
@@ -22,16 +22,12 @@ export function HeaderPageCrumb({ withSeparator }: { withSeparator: boolean }) {
 
   const listPath = (NAV_ROUTES[key] || '').split('?')[0];
   const inside = Boolean(listPath && pathname && pathname !== listPath && pathname.startsWith(`${listPath}/`));
-  const label = t(labelKey);
+  if (!inside) return null;
 
   return (
     <>
       {withSeparator ? <span className="header-workspace-separator" aria-hidden="true">›</span> : null}
-      {inside ? (
-        <Link href={listPath} className="header-page-crumb header-page-crumb--link">{label}</Link>
-      ) : (
-        <span className="header-page-crumb" aria-current="page">{label}</span>
-      )}
+      <Link href={listPath} className="header-page-crumb header-page-crumb--link">{t(labelKey)}</Link>
     </>
   );
 }

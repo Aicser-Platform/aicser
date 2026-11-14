@@ -658,6 +658,8 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       set((state) => ({ dashboards: [...state.dashboards, newDash] }));
       get().setActiveDashboardId(dashboard.id);
+      // A new dashboard is for building: keep it in edit mode as charts arrive.
+      get().setStudioMode('edit');
       return dashboard.id;
     } catch (error) {
       console.error('Failed to create dashboard:', error);

@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Table, Tag, Typography, Empty, Spin, Alert, Descriptions, Select, Space, message } from 'antd';
-import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Button, Card, Table, Tag, Typography, Empty, Spin, Alert, Descriptions, Select, Space, message, Tooltip } from 'antd';
+import { ReloadOutlined, DownloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { ComplianceSettingsModal } from './ComplianceSettingsModal';
 import { useTranslations } from 'next-intl';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { PermissionGuard } from '@/components/PermissionGuard';
+import { FeatureGate } from '@/ee';
 import { Permission } from '@/hooks/usePermissions';
 import { fetchApi, fetchApiBlob, handleUpgradeRequiredError } from '@/utils/api';
 import type { TabComponentProps } from '../page';
@@ -78,6 +80,7 @@ export const AuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [complianceOpen, setComplianceOpen] = useState(false);
 
   const buildParams = useCallback(
     (offset: number) => {
@@ -172,12 +175,26 @@ export const AuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   useEffect(() => {
     onSetAction?.(
       <Space>
-        <Button icon={<DownloadOutlined />} onClick={() => void handleExport()} loading={exporting}>
-          {t('export_csv')}
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={() => void fetchAuditLogs()} loading={loading}>
-          {t('refresh')}
-        </Button>
+        <FeatureGate
+          feature="compliance"
+          fallback={
+            <Tooltip title={t('enterprise_only_audit')}>
+              <Button icon={<DownloadOutlined />} disabled>{t('export_csv')}</Button>
+            </Tooltip>
+          }
+        >
+          <PermissionGuard permission={Permission.ORG_EDIT} fallback={null}>
+            <Button icon={<SafetyCertificateOutlined />} onClick={() => setComplianceOpen(true)}>
+              {t('compliance_button')}
+            </Button>
+          </PermissionGuard>
+          <Button icon={<DownloadOutlined />} onClick={() => void handleExport()} loading={exporting}>
+            {t('export_csv')}
+          </Button>
+        </FeatureGate>
+        <Tooltip title={t('refresh')}>
+          <Button icon={<ReloadOutlined />} aria-label={t('refresh')} onClick={() => void fetchAuditLogs()} loading={loading} />
+        </Tooltip>
       </Space>
     );
   }, [loading, exporting, onSetAction, fetchAuditLogs, handleExport]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -235,6 +252,7 @@ export const AuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
   return (
     <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" message={t('no_permission')} showIcon />}>
+      <ComplianceSettingsModal open={complianceOpen} organizationId={currentOrganization?.id ? String(currentOrganization.id) : undefined} onClose={() => setComplianceOpen(false)} />
       <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
           {t('subtitle')}

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { Alert, Button, List, Typography, message } from 'antd';
+import React, { useMemo, useState } from 'react';
+import { Button, Drawer, List, Typography, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
@@ -30,6 +30,7 @@ export const OtherProjectConnections: React.FC<{ projectSourceIds: Set<string> }
   const { projects } = useProjects(currentProject?.organization_id ?? currentOrgId ?? null);
   const { dataSources: orgSources } = useDataSources(null, { allProjects: true });
   const upsertGrant = useUpsertDataSourceAccessGrant();
+  const [open, setOpen] = useState(false);
 
   const others = useMemo(
     () =>
@@ -57,13 +58,13 @@ export const OtherProjectConnections: React.FC<{ projectSourceIds: Set<string> }
     }
   };
 
+  // One quiet line that opens the list, so the page's own connections stay first.
   return (
-    <Alert
-      type="info"
-      showIcon
-      style={{ marginBottom: 16 }}
-      message={t('other_projects_title', { count: others.length })}
-      description={
+    <>
+      <Button type="link" size="small" style={{ alignSelf: 'flex-start', paddingInline: 0 }} onClick={() => setOpen(true)}>
+        {t('other_projects_title', { count: others.length })}
+      </Button>
+      <Drawer open={open} onClose={() => setOpen(false)} width={520} title={t('other_projects_title', { count: others.length })} destroyOnHidden>
         <List
           size="small"
           dataSource={others}
@@ -88,7 +89,7 @@ export const OtherProjectConnections: React.FC<{ projectSourceIds: Set<string> }
             </List.Item>
           )}
         />
-      }
-    />
+      </Drawer>
+    </>
   );
 };

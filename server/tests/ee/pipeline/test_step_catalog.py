@@ -17,7 +17,7 @@ VALID_GROUPS = {
 def test_every_registered_step_declares_group_and_label():
     from src.modules.pipeline.transform.steps import STEP_REGISTRY
 
-    assert len(STEP_REGISTRY) == 38, "expected the full step catalog"
+    assert len(STEP_REGISTRY) == 44, "expected the full step catalog"
     for kind, cls in STEP_REGISTRY.items():
         assert cls.group in VALID_GROUPS, f"{kind} has group {cls.group!r}"
         assert cls.label, f"{kind} has no label"

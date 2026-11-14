@@ -14,7 +14,7 @@ const ROOT = '/api/semantic-domains';
 
 export const listDomains = () => fetchApi<{ domains: SemanticDomain[] }>(ROOT).then((r) => r.domains ?? []);
 
-export const createDomain = (body: { name: string; description?: string; is_core?: boolean }) =>
+export const createDomain = (body: { name: string; description?: string; is_core?: boolean; steward_ids?: string[] }) =>
   fetchApi<SemanticDomain>(ROOT, { method: 'POST', body: JSON.stringify(body) });
 
 export const updateDomain = (id: string, body: Partial<{ name: string; description: string; is_core: boolean }>) =>

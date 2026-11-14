@@ -158,12 +158,12 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
     if (trend === 'down') return <ArrowDownOutlined className="text-[var(--ant-color-error)] text-xs" />;
     if (trend === 'new')
       return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[var(--ant-color-warning-bg)] text-[var(--ant-color-warning)]">
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-[var(--ant-color-warning-bg)] text-[var(--ant-color-warning)]">
           {t('trend_badge_new')}
         </span>
       );
     return (
-      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[var(--ant-color-border-secondary)] text-[var(--ant-color-text-secondary)]">
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-[var(--ant-color-border-secondary)] text-[var(--ant-color-text-secondary)]">
         {t('trend_badge_stable')}
       </span>
     );

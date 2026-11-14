@@ -34,7 +34,6 @@ export function AccessOverviewTab() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Text type="secondary">{t('overview_desc')}</Text>
       <Space size={32} wrap>
         <Statistic title={t('total_sources')} value={data?.totals.sources ?? 0} />
         <Statistic title={t('total_row_rules')} value={data?.totals.row_rules ?? 0} />

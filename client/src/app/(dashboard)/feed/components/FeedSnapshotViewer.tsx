@@ -46,7 +46,7 @@ function FeedSnapshotViewerBody({ item, variant = 'detail', maxWidgets, fit = 's
   const payload = (item.asset.snapshotPayload || null) as FeedSnapshotPayload | null;
   const allWidgets = useMemo(() => snapshotWidgetsFromPayload(payload), [payload]);
   const allLayout = useMemo(() => snapshotLayoutFromPayload(payload), [payload]);
-  const pages = useMemo(() => payload?.visuals.pages || [], [payload]);
+  const pages = useMemo(() => payload?.visuals?.pages || [], [payload]);
   const defaultPageId = pages[0]?.id ?? null;
   const [activePageId, setActivePageId] = useState<string | null>(defaultPageId);
 
@@ -75,7 +75,7 @@ function FeedSnapshotViewerBody({ item, variant = 'detail', maxWidgets, fit = 's
   const widgets = useMemo(() => {
     if (variant !== 'card') return orderedWidgets;
 
-    const featuredIds = payload?.visuals.presentation?.featuredWidgetIds || [];
+    const featuredIds = payload?.visuals?.presentation?.featuredWidgetIds || [];
     const widgetById = new Map(orderedWidgets.map((widget) => [widget.id, widget]));
     const featured = featuredIds
       .map((id) => widgetById.get(id))
@@ -86,7 +86,7 @@ function FeedSnapshotViewerBody({ item, variant = 'detail', maxWidgets, fit = 's
     );
     const limit = maxWidgets ?? FEED_DASHBOARD_PREVIEW_MAX;
     return pickFeedPreviewWidgets(candidates, limit);
-  }, [maxWidgets, orderedWidgets, payload?.visuals.presentation?.featuredWidgetIds, variant]);
+  }, [maxWidgets, orderedWidgets, payload?.visuals?.presentation?.featuredWidgetIds, variant]);
 
   const layoutForWidgets = useMemo(
     () => allLayout.filter((position) => widgets.some((widget) => widget.id === position.i)),

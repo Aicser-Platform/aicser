@@ -13,6 +13,9 @@ services:
   redis:
     container_name: aiser-redis-ee-self-host-local
 
+  whisper:
+    container_name: aiser-whisper-ee-self-host-local
+
   server:
     image: ${AISER_SERVER_IMAGE:-aiser-ee-server:self-host}
     container_name: aiser-server-ee-self-host-local
@@ -54,6 +57,8 @@ volumes:
     name: aiser_redis_ee_self_host_local_data
   server_ee_uploads:
     name: aiser_server_ee_self_host_local_uploads
+  whisper_ee_models:
+    name: aiser_whisper_ee_self_host_local_models
 
 networks:
   default:

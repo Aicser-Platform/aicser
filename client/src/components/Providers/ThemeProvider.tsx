@@ -27,6 +27,12 @@ const LIGHT = {
     control: '#8c959f', // input, select, picker and button edges (3:1 against white, WCAG 1.4.11)
 } as const;
 
+// antd's dark algorithm remaps the seed colour (#00c2cb becomes #03a8b0); keep the brand colour as set.
+const darkAlgorithmKeepingBrand: typeof theme.darkAlgorithm = (seed, mapToken) => ({
+    ...theme.darkAlgorithm(seed, mapToken),
+    colorPrimary: seed.colorPrimary,
+});
+
 function readEffectiveDarkFromStorage(): boolean {
     if (typeof window === 'undefined') return false;
     try {
@@ -314,7 +320,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         <ThemeModeContext.Provider value={{ isDarkMode, setIsDarkMode: setDarkModeWithPersistence }}>
             <ConfigProvider
                 theme={{
-                    algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
+                    algorithm: isDarkMode ? darkAlgorithmKeepingBrand : theme.defaultAlgorithm,
                     token: {
                         // Core brand colors - follows the (EE) ThemeCustomizer's brand overrides
                         colorPrimary: primaryColor,
@@ -348,7 +354,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         // Text tokens - Clear hierarchy (synchronized with CSS variables)
                         colorText: isDarkMode ? '#e6edf3' : '#24292f',
                         colorTextSecondary: isDarkMode ? '#8b949e' : '#57606a',
-                        colorTextTertiary: isDarkMode ? '#6e7681' : '#5f6773',
+                        colorTextTertiary: isDarkMode ? '#848d97' : '#5f6773', // ≥4.5:1 on the dark container (#6e7681 measured 3.9)
                         colorTextQuaternary: isDarkMode ? '#6b7280' : '#7c8590',
                         
                         // Border tokens - Single consistent color (synchronized)
@@ -358,11 +364,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         // Typography - Enhanced for premium feel
                         fontSize: 14,
                         fontFamily: MULTILINGUAL_FONT_STACK,
-                        fontSizeHeading1: 38,
-                        fontSizeHeading2: 30,
-                        fontSizeHeading3: 24,
-                        fontSizeHeading4: 20,
-                        fontSizeHeading5: 16,
+                        // One type scale for the app (same steps as --type-* in
+                        // aiser-unified-design-system.css): 28 / 22 / 18 / 16 / 14.
+                        fontSizeHeading1: 28,
+                        fontSizeHeading2: 22,
+                        fontSizeHeading3: 18,
+                        fontSizeHeading4: 16,
+                        fontSizeHeading5: 14,
                         lineHeight: 1.6,
                         lineHeightHeading1: 1.2,
                         lineHeightHeading2: 1.3,

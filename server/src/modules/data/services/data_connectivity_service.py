@@ -3882,7 +3882,10 @@ class DataConnectivityService:
                         pass
             import aiohttp
 
-            async with aiohttp.ClientSession() as session:
+            from src.shared.datasource_target import ensure_api_url_allowed, public_client_session
+
+            await ensure_api_url_allowed(api_url)
+            async with public_client_session() as session:
                 _timeout = max(5, min(120, int(config.get("timeout", 30))))
                 async with session.request(
                     method,

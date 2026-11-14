@@ -1,0 +1,1 @@
+export { completeSupabaseRedirectSession } from '@/ee';

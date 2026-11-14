@@ -1496,49 +1496,6 @@ async def update_snapshot_compat(
     return await update_snapshot(snapshot_id, request_body=request_body, organization_id=organization_id, project_id=project_id, current_token=current_token, db=db)
 
 
-@router.post("/snapshots/cleanup")
-async def cleanup_snapshots(request: Dict[str, Any], db: AsyncSession = Depends(get_async_session)):
-    """Cleanup snapshots older than retention_days. Body: { retention_days: int, organization_id?: str }
-
-    Intended for admin or cron use.
-    """
-    retention_days = int(request.get('retention_days', 30))
-    organization_id = request.get('organization_id')
-    try:
-        cutoff = datetime.utcnow() - timedelta(days=retention_days)
-        if organization_id:
-            await db.execute(text("DELETE FROM query_snapshots WHERE organization_id = :org AND created_at < :cutoff"), {"org": organization_id, "cutoff": cutoff})
-        else:
-            await db.execute(text("DELETE FROM query_snapshots WHERE created_at < :cutoff"), {"cutoff": cutoff})
-        await db.commit()
-        return {"success": True, "message": "Cleanup completed"}
-    except Exception as e:
-        logger.error(f"❌ Snapshot cleanup failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/snapshots/cleanup/schedule")
-async def schedule_cleanup_snapshots(
-    request: Dict[str, Any],
-    db: AsyncSession = Depends(get_async_session)
-):
-    """Schedule a one-off cleanup run (admin). For production, replace with a cron or background task runner."""
-    retention_days = int(request.get('retention_days', 30))
-    organization_id = request.get('organization_id')
-    # Run cleanup immediately for now (could schedule in a task queue)
-    try:
-        cutoff = datetime.utcnow() - timedelta(days=retention_days)
-        if organization_id:
-            await db.execute(text("DELETE FROM query_snapshots WHERE organization_id = :org AND created_at < :cutoff"), {"org": organization_id, "cutoff": cutoff})
-        else:
-            await db.execute(text("DELETE FROM query_snapshots WHERE created_at < :cutoff"), {"cutoff": cutoff})
-        await db.commit()
-        return {"success": True, "message": "Scheduled cleanup executed"}
-    except Exception as e:
-        logger.error(f"❌ Scheduled snapshot cleanup failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 async def perform_snapshot_cleanup(db: AsyncSession, retention_days: int = 30, organization_id: Optional[str] = None) -> int:
     """Perform snapshot cleanup and return number of deleted rows (best-effort).
 

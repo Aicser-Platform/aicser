@@ -79,7 +79,8 @@ MODEL_SQL_RESPONSE = (
 
 
 @pytest.mark.asyncio
-async def test_sql_generation_survives_pii_scrubbing_end_to_end():
+async def test_sql_generation_survives_pii_scrubbing_end_to_end(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")  # any configured model; the reply is faked below
     # The LLM circuit breaker (ee.modules.ai.utils.circuit_breaker) is a
     # process-wide in-memory registry, not reset between tests -- and even a
     # reset() immediately before this test wasn't enough to make it reliable

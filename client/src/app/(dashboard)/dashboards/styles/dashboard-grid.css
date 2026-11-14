@@ -174,6 +174,14 @@
   opacity: 1;
 }
 
+/* Not resizable here (the chart designer, view mode, static items): react-grid-layout still renders
+   the handles and marks the item, relying on its own CSS to hide them — which the display rule above
+   overrides. Without this the corner marks showed on the chart designer's fixed preview. */
+.react-grid-item.react-resizable-hide > .react-resizable-handle,
+.react-grid-item.static > .react-resizable-handle {
+  display: none !important;
+}
+
 .react-grid-item > .react-resizable-handle::after {
   content: "";
   position: absolute;
@@ -504,6 +512,13 @@
   pointer-events: auto;
 }
 
+/* Fill by position, not percent: a card sized only by min-height has no definite height, and
+   height: 100% there resolves to 0, leaving a blank chart. */
+.widget-chart-canvas > div:not(.dashboard-chart-tooltip):not([style*="position: absolute"]):not([style*="position:absolute"]):not([style*="position: fixed"]):not([style*="position:fixed"]) {
+  position: absolute !important;
+  inset: 0;
+}
+
 .widget-chart-canvas > div:not(.dashboard-chart-tooltip):not([style*="position: absolute"]):not([style*="position:absolute"]):not([style*="position: fixed"]):not([style*="position:fixed"]),
 .widget-chart-canvas svg,
 .widget-chart-canvas canvas {
@@ -537,6 +552,17 @@
 
 .widget-card.widget-type-stat .widget-content-root {
   padding: 0;
+}
+
+/* Filled / tinted KPI layouts (executive, tile): the KPI surface is the card. It fills the card edge
+   to edge (also over the Chart Designer's 20px 24px body padding) instead of sitting inside it as a
+   second, smaller card; the card's own radius, border and shadow frame it. */
+.widget-card.stat-filled .widget-card-body {
+  padding: 0 !important;
+}
+.widget-card.stat-filled .studio-stat-surface {
+  border-radius: 0 !important;
+  border: none !important;
 }
 
 .widget-card.widget-type-slicer .widget-content-root {
@@ -905,6 +931,17 @@ html:not(.dark):not([data-theme='dark']) .dashboard-chart-tooltip *,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The KPI number sizes itself to its card (StatWidget passes the size as --kpi-value-size). The global
+   type scale sets h2 size, weight, margin and colour with !important; this more specific rule wins. */
+h2.studio-stat-value {
+  font-size: var(--kpi-value-size, var(--font-size-2xl)) !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+  margin: 0 !important;
+  letter-spacing: -0.02em !important;
+  color: var(--kpi-value-color, var(--ant-color-text)) !important;
 }
 
 /* Executive KPI Cards always use white text on their filled dark backgrounds */

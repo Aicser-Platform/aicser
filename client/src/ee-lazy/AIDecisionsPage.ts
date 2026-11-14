@@ -1,0 +1,1 @@
+export { AIDecisionsPage } from '@/ee';

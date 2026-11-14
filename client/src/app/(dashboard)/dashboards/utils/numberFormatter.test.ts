@@ -20,4 +20,13 @@ describe('formatStatValue', () => {
     expect(formatStatValue(0.25, 'percent')).toBe('25.0%');
     expect(formatStatValue(25, 'percent')).toBe('25.0%');
   });
+
+  it('shows a whole figure exactly, and shortens only the big ones', () => {
+    expect(formatStatValue(1200)).toBe('1,200');
+    expect(formatStatValue('1200', 'number')).toBe('1,200');
+    expect(formatStatValue(12345, 'currency', '$')).toBe('$12,345');
+    expect(formatStatValue(-1500, 'number', undefined, ' kg')).toBe('-1,500 kg');
+    expect(formatStatValue(2_500_000)).toBe('2.50M');
+    expect(formatStatValue(1234.56)).toBe('1.23k');
+  });
 });

@@ -1,0 +1,1 @@
+export { AgentRulesTab } from '@/ee';

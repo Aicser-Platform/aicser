@@ -102,8 +102,9 @@ export default function PreparePage() {
     {
       title: t('col_updated'),
       dataIndex: 'updated_at',
-      width: 170,
-      render: (v?: string | null) => (v ? new Date(v).toLocaleString() : '—'),
+      width: 190,
+      render: (v?: string | null) =>
+        v ? new Date(v).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—',
     },
     {
       key: 'actions',

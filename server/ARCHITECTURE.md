@@ -610,7 +610,7 @@ Three **deployment products** share one usage API on Enterprise but expose diffe
 
 | Product | Detection | Billing UI | Usage UI |
 | --- | --- | --- | --- |
-| **Aicser Cloud (SaaS)** | `AISER_DEPLOYMENT_MODE=saas`, EE | Settings → **Billing** (Stripe/KHQR) | Settings → **Usage & analytics** + profile menu |
+| **Aicser Cloud (SaaS)** | `AISER_DEPLOYMENT_MODE=saas`, EE | Settings → **Billing** (Stripe/KHQR) | Settings → **Usage** + profile menu |
 | **EE self-host** | `self_host` + EE license | Settings → **License** (no Stripe tab) | Same **Usage** tab (local `organization_usage` + `llm_request_summary`) |
 | **CE self-host** | CE edition | None | Settings → **Usage** (footprint + BYOK copy); `GET /pricing/usage` |
 

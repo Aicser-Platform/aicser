@@ -1,0 +1,1 @@
+export { SubscriptionSettingsTab } from '@/ee';

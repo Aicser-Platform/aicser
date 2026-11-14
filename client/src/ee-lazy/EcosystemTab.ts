@@ -1,0 +1,1 @@
+export { EcosystemTab } from '@/ee';

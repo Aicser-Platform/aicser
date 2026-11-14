@@ -1349,7 +1349,29 @@ function normalizeGfmPipeTables(content: string): string {
  */
 export function repairCollapsedMarkdown(content: string): string {
   if (!content || typeof content !== 'string') return content || '';
-  let s = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Well-formed tables are kept exactly as written: the repairs below are for collapsed text, and
+  // their "broken table" test matches every ordinary row of 3+ columns ("| Branch | NPL rate | …"),
+  // which once re-flowed a correct 4-column table into 3 columns.
+  const tables: string[] = [];
+  const protectedText = normalized.replace(/(^|\n)((?:[ \t]*\|[^\n]*(?:\n|$)){3,})/g, (full, lead: string, block: string) => {
+    if (!isWellFormedGfmTableBlock(block)) return full;
+    tables.push(block.trim());
+    return `${lead}\n\n${TABLE_SLOT}${tables.length - 1}${TABLE_SLOT}\n\n`;
+  });
+  const repaired = repairCollapsedText(protectedText);
+  if (!tables.length) return repaired;
+  return repaired
+    .replace(new RegExp(`${TABLE_SLOT}(\\d+)${TABLE_SLOT}`, 'g'), (_m, i: string) => `\n\n${tables[Number(i)]}\n\n`)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Marks where a protected table sits while the text around it is repaired (private-use character). */
+const TABLE_SLOT = '\uE000';
+
+function repairCollapsedText(content: string): string {
+  let s = content;
   // Literal escaped newlines from JSON/stringified payloads
   if (s.includes('\\n') && (s.match(/\n/g) || []).length < 2) {
     s = s.replace(/\\n/g, '\n').replace(/\\t/g, '\t');

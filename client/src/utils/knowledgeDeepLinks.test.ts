@@ -13,7 +13,7 @@ describe('knowledgeDeepLinks', () => {
       excerpt: 'Refund policy allows returns within 30 days.',
       source: 'Policy.pdf',
     });
-    expect(href).toContain('/knowledge?');
+    expect(href).toContain('/data?');
     expect(href).toContain('document_id=doc-123');
     expect(href).toContain('chunk_id=chunk-456');
     expect(href).toContain('library_id=lib-789');

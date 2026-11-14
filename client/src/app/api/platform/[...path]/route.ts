@@ -43,15 +43,25 @@ async function handlePlatformRequest(
 
     const response = await fetch(backendUrl, requestOptions);
 
+    const responseContentType = response.headers.get('content-type') || '';
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
+      // Pass the backend's JSON error through untouched so the client keeps structured fields
+      // (e.g. a 402's upgrade_required / required_plan) instead of a stringified body.
+      const errorText = await response.text().catch(() => '');
+      if (responseContentType.includes('application/json') && errorText) {
+        try {
+          return NextResponse.json(JSON.parse(errorText), { status: response.status });
+        } catch {
+          /* fall through */
+        }
+      }
       return NextResponse.json(
-        { success: false, error: errorText || `Backend error: ${response.status}` },
+        { detail: { message: errorText || `Backend error: ${response.status}` } },
         { status: response.status }
       );
     }
 
-    const responseContentType = response.headers.get('content-type') || '';
     if (responseContentType.includes('application/json')) {
       return NextResponse.json(await response.json(), { status: response.status });
     }

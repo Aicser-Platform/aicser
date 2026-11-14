@@ -56,7 +56,6 @@
 .erd-details-list__title {
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 4px;
 }
@@ -171,8 +170,9 @@
      so it rendered past its allotted space and visually overlapped the
      Auto Layout button instead of shrinking. flex + min-width:0 makes it
      a genuinely flexible item that yields first. */
-  flex: 1 1 auto;
+  flex: 0 1 240px;
   min-width: 80px;
+  margin-left: auto;
   max-width: min(320px, 32vw);
 }
 
@@ -279,7 +279,6 @@
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--ant-color-text-tertiary);
   border-bottom: 1px solid var(--ant-color-border);
   background: var(--ant-color-fill-quaternary);
@@ -615,7 +614,6 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1.2;
-  text-transform: uppercase;
 }
 
 .table-node.selected .table-node-schema {

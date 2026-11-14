@@ -23,3 +23,4 @@ class LicenseStateRecord(BaseModel):
     expires_at = Column(DateTime(timezone=True), nullable=True)
     last_validated_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(Text, nullable=True)
+    license_type = Column(String(32), nullable=True)

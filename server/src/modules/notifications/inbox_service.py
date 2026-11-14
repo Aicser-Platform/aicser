@@ -13,6 +13,10 @@ Assemble the header Activity inbox for AISER:
   (far fewer rows than usual), and cleaning recipes AI agents drafted for a person to review.
 - **Activity** (adoption): contextual setup nudges from real usage (data sources, chat, monitors,
   dashboards) — dismiss keys stored in user_settings alongside other preferences.
+- **Catalog**: open quality incidents on assets the user follows or was handed, tasks assigned to
+  them, and new messages on assets they follow.
+- **AI** (agent): Aicser Agent tasks waiting for this person's approval or answer, and tasks that
+  finished in the last day.
 """
 
 from __future__ import annotations
@@ -336,11 +340,37 @@ _FEED_NOTIFICATION_COPY = {
 }
 
 
+def _share_link_copy(actor: str, metadata: dict) -> tuple[str, str]:
+    title = metadata.get("title") or "A shared link"
+    state = metadata.get("state")
+    if state == "approved":
+        return "Link approved", f"{actor} approved {title}. It's live now."
+    if state == "declined":
+        note = metadata.get("note")
+        return "Link declined", f"{actor} declined {title}: {note}" if note else f"{actor} declined {title}."
+    return "Approval needed", f"{actor} wants to share {title} outside the organization."
+
+
+def _ai_agent_copy(actor: str, metadata: dict) -> tuple[str, str]:
+    title = metadata.get("title") or "An agent"
+    state = metadata.get("state")
+    if state == "approved":
+        return "Agent approved", f"{actor} approved {title}. It's live now."
+    if state == "declined":
+        note = metadata.get("note")
+        return "Agent declined", f"{actor} declined {title}: {note}" if note else f"{actor} declined {title}."
+    return "Approval needed", f"{actor} wants to publish the agent {title}."
+
+
 def _feed_approval_copy(actor: str, metadata: Optional[dict]) -> tuple[str, str]:
     """Approval is the one feed-notification type whose meaning depends on
     metadata.status (pending/approved/rejected), not just its type string —
     see service_actions.py's three _create_notification(type="approval", ...)
     call sites (submit-for-review, approve, reject)."""
+    if (metadata or {}).get("kind") == "share_link":
+        return _share_link_copy(actor, metadata or {})
+    if (metadata or {}).get("kind") == "ai_agent":
+        return _ai_agent_copy(actor, metadata or {})
     status = str((metadata or {}).get("status") or "").lower()
     if status == "approved":
         return "Feed · Approved", "Your post was approved and published."
@@ -371,6 +401,9 @@ async def feed_notifications(db: AsyncSession, user_payload: Optional[dict]) -> 
     for n in result.items:
         actor_name = (n.actor.name if n.actor else None) or "Someone"
         href = f"/feed/{n.postId}" if n.postId else "/feed"
+        is_link = (n.metadata or {}).get("kind") in ("share_link", "ai_agent")
+        if is_link:
+            href = (n.metadata or {}).get("href") or href
         if n.type == "approval":
             title, message = _feed_approval_copy(actor_name, n.metadata)
         else:
@@ -386,9 +419,147 @@ async def feed_notifications(db: AsyncSession, user_payload: Optional[dict]) -> 
                 severity="info",
                 created_at=n.createdAt,
                 href=href,
-                actions=[NotificationAction(label="Open in Feed", href=href)],
+                actions=[NotificationAction(label="Review" if is_link else "Open in Feed", href=href)],
             )
         )
+    return items
+
+
+async def agent_task_notifications(db: AsyncSession, user_id: str) -> list[NotificationItem]:
+    """Agent tasks that wait for this person, and tasks of theirs that finished in the last day."""
+    if not user_id:
+        return []
+    try:
+        rows = (await db.execute(
+            sa.text(
+                """
+                SELECT id::text AS id, goal, status, pending, error, created_at, finished_at
+                FROM agent_runs
+                WHERE user_id::text = :user_id
+                  AND (status = 'waiting_approval'
+                       OR (status IN ('completed', 'failed') AND finished_at > now() - interval '1 day'))
+                ORDER BY COALESCE(finished_at, created_at) DESC
+                LIMIT 20
+                """
+            ),
+            {"user_id": str(user_id)},
+        )).mappings().all()
+    except Exception as e:
+        logger.debug("inbox agent_runs skipped (table or query): %s", e)
+        return []
+    items: list[NotificationItem] = []
+    for r in rows:
+        goal = _truncate(r["goal"], 120)
+        href = f"/agent?task={r['id']}"
+        if r["status"] == "waiting_approval":
+            pending = r["pending"] or {}
+            asks = pending.get("type") == "question"
+            tool = (pending.get("tool_call") or {}).get("name") or "an action"
+            items.append(NotificationItem(
+                id=f"agent-wait-{r['id']}", kind="ai", severity="warning",
+                title="Agent has a question" if asks else "Agent needs your approval",
+                message=_truncate(pending.get("question"), 220) if asks else f"{goal} — wants to run {tool}",
+                created_at=_iso(r["created_at"]), href=href,
+                actions=[NotificationAction(label="Answer" if asks else "Review", href=href)],
+            ))
+        else:
+            failed = r["status"] == "failed"
+            items.append(NotificationItem(
+                id=f"agent-done-{r['id']}", kind="ai", severity="error" if failed else "info",
+                title="Agent task stopped" if failed else "Agent task finished",
+                message=_truncate(r["error"], 220) if failed else goal,
+                created_at=_iso(r["finished_at"]), href=href,
+            ))
+    return items
+
+
+CATALOG_LOOKBACK_DAYS = 14
+CATALOG_LIMIT = 10
+
+
+async def seat_request_notifications(db: AsyncSession, org_id: str, user_id: str) -> list[NotificationItem]:
+    """Light members asking for an AI seat, for the people who can give them one."""
+    from fastapi import HTTPException
+
+    from src.modules.pricing.feature_gate import require_billing_permission
+
+    try:
+        rows = (await db.execute(sa.text(
+            "SELECT s.user_id, s.ai_requested_at, u.email, u.first_name FROM organization_seats s "
+            "JOIN users u ON u.id = s.user_id "
+            "WHERE s.organization_id = CAST(:o AS uuid) AND s.ai_requested_at IS NOT NULL "
+            "ORDER BY s.ai_requested_at DESC LIMIT 10"), {"o": str(org_id)})).mappings().all()
+    except Exception as exc:  # noqa: BLE001 - Community has no seats
+        await db.rollback()
+        logger.debug("Seat requests not read: %s", exc)
+        return []
+    if not rows:
+        return []
+    try:
+        await require_billing_permission(user_id, org_id, db, manage=True)
+    except HTTPException:
+        return []
+    href = "/settings?tab=billing-subscription&subtab=seats"
+    return [NotificationItem(
+        id=f"seat-request-{r['user_id']}", kind="activity", severity="info",
+        title="AI seat requested", message=f"{r['first_name'] or r['email']} asked for an AI seat",
+        created_at=_iso(r["ai_requested_at"]), href=href,
+        actions=[NotificationAction(label="Review", href=href)],
+    ) for r in rows]
+
+
+def _catalog_href(kind: str, ref: str, tab: str) -> str:
+    from urllib.parse import quote
+
+    return f"/catalog?asset={quote(f'{kind}:{ref}', safe='')}&tab={tab}"
+
+
+async def catalog_notifications(db: AsyncSession, org_id: str, user_id: str) -> list[NotificationItem]:
+    """Catalog work for this person: open incidents on assets they follow or were handed, open tasks
+    assigned to them, and new messages by others on assets they follow (EE tables; none in CE)."""
+    p = {"org": str(org_id), "uid": str(user_id), "days": CATALOG_LOOKBACK_DAYS, "lim": CATALOG_LIMIT}
+    try:
+        async with db.begin_nested():
+            incidents = (await db.execute(sa.text("""
+                SELECT i.id, i.asset_kind, i.asset_ref, i.title, i.severity, i.last_seen, i.occurrences
+                FROM catalog_incidents i
+                WHERE i.organization_id = CAST(:org AS uuid) AND i.status <> 'resolved'
+                  AND (CAST(i.assignee_user_id AS text) = :uid OR EXISTS (
+                    SELECT 1 FROM catalog_follows f WHERE f.organization_id = i.organization_id
+                      AND f.asset_kind = i.asset_kind AND f.asset_ref = i.asset_ref AND CAST(f.user_id AS text) = :uid))
+                ORDER BY i.last_seen DESC LIMIT :lim""" ), p)).mappings().all()
+            threads = (await db.execute(sa.text("""
+                SELECT t.id, t.asset_kind, t.asset_ref, t.kind, t.body, t.created_at, t.column_name,
+                       CAST(t.assignee_user_id AS text) AS assignee, t.status,
+                       COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.username, 'Someone') AS author
+                FROM catalog_threads t LEFT JOIN users u ON u.id = t.author_id
+                WHERE t.organization_id = CAST(:org AS uuid) AND t.deleted_at IS NULL AND CAST(t.author_id AS text) <> :uid
+                  AND ((t.kind = 'task' AND t.status = 'open' AND CAST(t.assignee_user_id AS text) = :uid)
+                    OR (t.created_at > now() - make_interval(days => :days) AND EXISTS (
+                      SELECT 1 FROM catalog_follows f WHERE f.organization_id = t.organization_id
+                        AND f.asset_kind = t.asset_kind AND f.asset_ref = t.asset_ref AND CAST(f.user_id AS text) = :uid)))
+                ORDER BY t.created_at DESC LIMIT :lim"""), p)).mappings().all()
+    except Exception as exc:
+        logger.debug("catalog notifications unavailable: %s", exc)
+        return []
+    items: list[NotificationItem] = []
+    for r in incidents:
+        href = _catalog_href(r["asset_kind"], r["asset_ref"], "quality")
+        repeats = f" ({r['occurrences']} times)" if (r["occurrences"] or 1) > 1 else ""
+        items.append(NotificationItem(
+            id=f"catalog-incident-{r['id']}", kind="activity", title=r["title"],
+            message=f"Open quality incident{repeats}.", severity="error" if r["severity"] == "fail" else "warning",
+            created_at=_iso(r["last_seen"]), href=href, actions=[NotificationAction(label="Open in Catalog", href=href)],
+        ))
+    for r in threads:
+        href = _catalog_href(r["asset_kind"], r["asset_ref"], "activity")
+        task_for_me = r["kind"] == "task" and r["assignee"] == str(user_id) and r["status"] == "open"
+        title = f"{r['author']} gave you a task" if task_for_me else f"{r['author']} wrote on an asset you follow"
+        items.append(NotificationItem(
+            id=f"catalog-thread-{r['id']}", kind="comment", title=title, message=_truncate(r["body"], 160),
+            severity="warning" if task_for_me else "info", created_at=_iso(r["created_at"]), href=href,
+            actions=[NotificationAction(label="Open in Catalog", href=href)],
+        ))
     return items
 
 
@@ -538,7 +709,7 @@ async def comment_notifications(db: AsyncSession, user_id: str) -> list[Notifica
             rows = (await db.execute(sa.text(
                 """
                 SELECT c.id, c.dashboard_id, c.parent_id, c.author_name, c.body, c.created_at,
-                       d.name AS dashboard_name
+                       d.name AS dashboard_name, d.created_by
                 FROM dashboard_comments c
                 JOIN dashboards d ON d.id = c.dashboard_id
                 WHERE COALESCE(c.is_deleted, false) = false
@@ -546,6 +717,7 @@ async def comment_notifications(db: AsyncSession, user_id: str) -> list[Notifica
                   AND c.created_at > now() - make_interval(days => :days)
                   AND (
                     CAST(d.created_by AS text) = :uid
+                    OR position(:mention in lower(c.body)) > 0
                     OR EXISTS (
                       SELECT 1 FROM dashboard_comments mine
                       WHERE CAST(mine.author_id AS text) = :uid
@@ -556,7 +728,8 @@ async def comment_notifications(db: AsyncSession, user_id: str) -> list[Notifica
                 ORDER BY c.created_at DESC
                 LIMIT :lim
                 """
-            ), {"uid": str(user_id), "days": COMMENT_LOOKBACK_DAYS, "lim": COMMENT_NOTIFICATION_LIMIT})).mappings().all()
+            ), {"uid": str(user_id), "mention": f"(user:{str(user_id).lower()})", "days": COMMENT_LOOKBACK_DAYS,
+                "lim": COMMENT_NOTIFICATION_LIMIT})).mappings().all()
     except Exception as exc:
         logger.debug("comment notifications unavailable: %s", exc)
         return []
@@ -564,13 +737,23 @@ async def comment_notifications(db: AsyncSession, user_id: str) -> list[Notifica
     for r in rows:
         who = r["author_name"] or "Someone"
         board = r["dashboard_name"] or "a dashboard"
-        verb = "replied on" if r["parent_id"] else "commented on"
+        from src.modules.dashboards.comments import plain
+
+        mentioned = f"(user:{str(user_id).lower()})" in str(r["body"] or "").lower()
+        if mentioned and str(r.get("created_by") or "") != str(user_id):
+            from src.modules.dashboards.comments import authorize
+
+            try:  # a mention never shows a dashboard the person can't open
+                await authorize(db, str(user_id), r["dashboard_id"])
+            except Exception:  # noqa: BLE001
+                continue
+        verb = "mentioned you on" if mentioned else "replied on" if r["parent_id"] else "commented on"
         href = f"/dashboards?id={r['dashboard_id']}&comments=open"
         items.append(NotificationItem(
             id=f"comment-{r['id']}",
             kind="comment",
             title=f"{who} {verb} {board}",
-            message=_truncate(r["body"], 160),
+            message=_truncate(plain(r["body"]), 160),
             severity="info",
             created_at=_iso(r["created_at"]),
             href=href,
@@ -713,6 +896,43 @@ async def review_notifications(db: AsyncSession, org_id: Optional[str], user_id:
     ]
 
 
+DECISION_CLOSED_STATUSES = ("resolved", "closed", "approved", "rejected", "dismissed", "done")
+
+
+async def decision_review_notifications(db: AsyncSession, org_id: Optional[str]) -> list[NotificationItem]:
+    """Decision cases in this organization that wait for a person's review (Decision OS, EE)."""
+    if not org_id:
+        return []
+    try:
+        async with db.begin_nested():
+            rows = (await db.execute(sa.text(
+                """
+                SELECT id::text AS id, title, conversation_id, confidence_score, updated_at
+                FROM decision_cases
+                WHERE hitl_required = true AND CAST(tenant_id AS text) = :org
+                  AND lower(status) NOT IN :closed
+                ORDER BY updated_at DESC LIMIT 10
+                """
+            ).bindparams(sa.bindparam("closed", expanding=True)),
+                {"org": str(org_id), "closed": list(DECISION_CLOSED_STATUSES)})).mappings().all()
+    except Exception as exc:
+        logger.debug("decision review notifications unavailable: %s", exc)
+        return []
+    items: list[NotificationItem] = []
+    for r in rows:
+        href = f"/chat?conversation={r['conversation_id']}" if r["conversation_id"] else "/ai-decisions"
+        confidence = r["confidence_score"]
+        items.append(NotificationItem(
+            id=f"decision-review-{r['id']}", kind="ai", severity="warning",
+            title="Decision awaiting your review",
+            message=_truncate(r["title"] or "A decision needs a person's sign-off.", 200)
+            + (f" · {round(float(confidence) * 100)}% confidence" if confidence is not None else ""),
+            created_at=_iso(r["updated_at"]), href=href,
+            actions=[NotificationAction(label="Review", href=href)],
+        ))
+    return items
+
+
 async def build_inbox(
     db: AsyncSession,
     *,
@@ -736,12 +956,16 @@ async def build_inbox(
     chunks.extend(await comment_notifications(db, user_id))
     chunks.extend(await notebook_run_notifications(db, user_id))
     chunks.extend(await review_notifications(db, org_id, user_id))
+    chunks.extend(await agent_task_notifications(db, user_id))
     if org_id:
         chunks.extend(await engagement_notifications(db, org_id, user_id, dismissed_tips))
         chunks.extend(await data_alert_notifications(db, org_id))
         chunks.extend(await pipeline_run_notifications(db, org_id))
         chunks.extend(await ai_pipeline_notifications(db, org_id, user_id))
         chunks.extend(await credit_usage_notifications(db, org_id))
+        chunks.extend(await decision_review_notifications(db, org_id))
+        chunks.extend(await catalog_notifications(db, org_id, user_id))
+        chunks.extend(await seat_request_notifications(db, org_id, user_id))
 
     # Only engagement (adoption tip) items carried a dismiss_key - alerts,
     # invitations, AI, and feed rows had no way to be dismissed at all, only

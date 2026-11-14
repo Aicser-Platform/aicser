@@ -29,7 +29,11 @@ async def get_license_status(
 
     return {
         "requires_validation": state.requires_validation(),
-        "is_valid": state.is_valid,
+        "is_valid": state.usable(),
+        "read_only": state.requires_validation() and not state.usable() and bool(state.license_id),
+        "license_type": state.license_type,
+        "offline": state.offline,
+        "days_left": state.days_left(),
         "license_id": state.license_id,
         "customer_id": state.customer_id,
         "max_users": state.max_users,

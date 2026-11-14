@@ -3,6 +3,8 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
   '/query-editor': ['sec-analyze'],
   '/notebooks': ['sec-analyze'],
   '/sheets': ['sec-analyze'],
+  '/docs': ['sec-analyze'],
+  '/slides': ['sec-analyze'],
   '/spatial': ['sec-analyze'],
   '/models': ['sec-predict'],
   '/ai-decisions': ['sec-predict'],
@@ -20,12 +22,16 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
 
 export const NAV_ROUTES: Record<string, string> = {
   chat: '/chat',
+  agent: '/agent',
+  agents: '/agents',
   dashboards: '/dashboards',
   feed: '/feed',
   'chart-designer': '/chart-designer',
   'query-editor': '/query-editor',
   notebooks: '/notebooks',
   sheets: '/sheets',
+  docs: '/docs',
+  slides: '/slides',
   spatial: '/spatial',
   warehouse: '/lakehouse',
   models: '/models',
@@ -47,6 +53,8 @@ export const NAV_ROUTES: Record<string, string> = {
  */
 export const NAV_LABEL_KEYS: Record<string, string> = {
   chat: 'ai_engine',
+  agent: 'agent_tasks',
+  agents: 'ai_agents',
   feed: 'feed',
   dashboards: 'dashboard_studio',
   'chart-designer': 'chart_designer',
@@ -55,6 +63,8 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   'query-editor': 'query_editor',
   notebooks: 'notebooks',
   sheets: 'sheets',
+  docs: 'docs',
+  slides: 'slides',
   spatial: 'spatial',
   'sec-predict': 'cat_ai',
   models: 'models',
@@ -78,6 +88,8 @@ export const NAV_PARENT_GROUP: Record<string, string> = {
   'query-editor': 'sec-analyze',
   notebooks: 'sec-analyze',
   sheets: 'sec-analyze',
+  docs: 'sec-analyze',
+  slides: 'sec-analyze',
   spatial: 'sec-analyze',
   models: 'sec-predict',
   'ai-decisions': 'sec-predict',
@@ -94,6 +106,8 @@ export const NAV_PARENT_GROUP: Record<string, string> = {
  * findable for power users, e.g. "AI analytics engine", "formerly Query Editor"). */
 export const NAV_HINT_KEYS: Record<string, string> = {
   chat: 'hint_ask',
+  agent: 'hint_agent',
+  agents: 'hint_agents',
   feed: 'hint_feed',
   dashboards: 'hint_dashboards',
   'chart-designer': 'hint_chart_library',
@@ -101,6 +115,8 @@ export const NAV_HINT_KEYS: Record<string, string> = {
   'query-editor': 'hint_sql_editor',
   notebooks: 'hint_notebooks',
   sheets: 'hint_sheets',
+  docs: 'hint_docs',
+  slides: 'hint_slides',
   spatial: 'hint_maps',
   models: 'hint_models',
   'ai-decisions': 'hint_ai_decisions',
@@ -150,7 +166,7 @@ export function flattenNavLinks(items: NavItemDef[]): NavLinkDef[] {
 
 /** Maps (/spatial) is switched off until it's ready; NEXT_PUBLIC_FEATURE_MAPS=true brings it back. */
 export const MAPS_ENABLED = process.env.NEXT_PUBLIC_FEATURE_MAPS === 'true';
-const analyzeTools = (): string[] => ['chart-designer', 'query-editor', 'sheets', 'notebooks', ...(MAPS_ENABLED ? ['spatial'] : [])];
+const analyzeTools = (): string[] => ['chart-designer', 'query-editor', 'sheets', 'docs', 'slides', 'notebooks', ...(MAPS_ENABLED ? ['spatial'] : [])];
 
 const link = (key: string): NavLinkDef => ({ key, labelKey: NAV_LABEL_KEYS[key], href: NAV_ROUTES[key] });
 const top = (key: string): NavItemDef => ({ kind: 'link', ...link(key) });
@@ -163,25 +179,33 @@ export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
   // then what builders use — analysis tools, predictions and decisions — and the data itself.
   // Builder sections fold by default for people who only consume (see defaultFoldedSections).
   return [
-    ...(showAiNav ? [top('chat')] : []),
+    ...(showAiNav ? [top('chat'), top('agents')] : []),
     top('feed'),
     top('dashboards'),
+    // What runs by itself, together: being told when numbers move, and work done on a schedule.
     top('alerts'),
+    ...(showAiNav ? [top('agent')] : []),
     section('sec-analyze', analyzeTools()),
     ...(showAiNav ? [section('sec-predict', ['models', 'ai-decisions'])] : [section('sec-predict', ['models'])]),
     // Connect → prepare → move → model → find. Lakehouse storage and compute are admin
     // settings (Settings › Lakehouse); Documents fold into the Catalog next.
-    section('sec-data', ['data', 'prepare', 'pipelines', 'semantic-layer', 'catalog', 'knowledge']),
+    // Documents (unstructured files) live on Connections › Documents.
+    section('sec-data', ['data', 'prepare', 'pipelines', 'semantic-layer', 'catalog']),
   ];
 }
 
 export type NavAccess = {
   hasFeature?: (feature: string) => boolean;
   hasPermission?: (permission: string) => boolean;
+  /** What the organization chose to show: settings › Menu. */
+  menu?: Record<string, 'everyone' | 'admins' | 'off'>;
+  isAdmin?: boolean;
 };
 
 /** Sidebar key → plan feature that must be on. Everyday Analyze items stay ungated. */
 export const NAV_FEATURE_GATE: Record<string, string> = {
+  agent: 'agent',
+  agents: 'agent',
   alerts: 'alerts',
   catalog: 'catalog',
   warehouse: 'lakehouse',
@@ -192,12 +216,17 @@ export const NAV_FEATURE_GATE: Record<string, string> = {
 
 /** Sidebar key → RBAC code. Applied only after permissions have loaded. */
 export const NAV_PERMISSION_GATE: Record<string, string> = {
+  // Viewers talk to agents shared with them; Ask and Automations need their own rights.
+  chat: 'ai:use',
+  agent: 'agent:use',
   alerts: 'alert:view',
   catalog: 'catalog:view',
 };
 
-function linkAllowed(key: string, access?: NavAccess): boolean {
+export function linkAllowed(key: string, access?: NavAccess): boolean {
   if (!access) return true;
+  const level = access.menu?.[key];
+  if (level === 'off' || (level === 'admins' && !access.isAdmin)) return false;
   const feature = NAV_FEATURE_GATE[key];
   if (feature && access.hasFeature && !access.hasFeature(feature)) return false;
   const perm = NAV_PERMISSION_GATE[key];
@@ -242,8 +271,14 @@ export function buildCommunitySidebarItems(): NavItemDef[] {
     top('dashboards'),
     top('feed'),
     section('sec-analyze', analyzeTools()),
-    section('sec-data', ['data', 'prepare', 'knowledge']),
+    section('sec-data', ['data', 'prepare']),
   ];
+}
+
+/** The everyday pages only (Ask, Automations, Shared insights, Dashboards, Alerts): what people
+ * who view and ask see by default, with "Show all tools" a click away. */
+export function essentialSidebarItems(items: NavItemDef[]): NavItemDef[] {
+  return collapseNavDividers(items.filter((item) => item.kind !== 'section'));
 }
 
 /** Sections folded when someone first opens the app: builder tools for people who only
@@ -270,8 +305,10 @@ export function openKeysForPathname(pathname: string | null): string[] {
 export function selectedKeyForPathname(pathname: string | null, search?: string | null): string {
   if (!pathname) return '';
   if (pathname === '/chat' || pathname === '/ai-search' || pathname === '/ai-analytics') return 'chat';
+  if (pathname === '/agents' || pathname.startsWith('/agents/')) return 'agents';
+  if (pathname === '/agent' || pathname.startsWith('/agent/')) return 'agent';
   if (pathname === '/data') return 'data';
-  if (pathname === '/knowledge') return 'knowledge';
+  if (pathname === '/knowledge') return 'data';
   if (pathname === '/ai-decisions' || pathname.startsWith('/ai-decisions/')) return 'ai-decisions';
   if (pathname.startsWith('/settings')) {
     const tab = search ? new URLSearchParams(search).get('tab') : null;
@@ -288,7 +325,7 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/semantic-layer' || pathname.startsWith('/semantic-layer/')) return 'semantic-layer';
   if (pathname === '/alerts') return 'alerts';
   // Pages added later were missing here, so the sidebar highlighted nothing on them.
-  for (const key of ['notebooks', 'sheets', 'spatial', 'warehouse', 'models', 'dashboards', 'prepare'] as const) {
+  for (const key of ['notebooks', 'sheets', 'docs', 'slides', 'spatial', 'warehouse', 'models', 'dashboards', 'prepare'] as const) {
     if (pathname === NAV_ROUTES[key] || pathname.startsWith(`${NAV_ROUTES[key]}/`)) return key;
   }
   return '';

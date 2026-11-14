@@ -1,0 +1,13 @@
+# Railway service for voice transcription: set the service's Root Directory to deploy/whisper.
+# Variables: WHISPER_HOST=:: (private network is IPv6), a volume mounted at /models, and
+# RAILWAY_RUN_UID=0 so the non-root image can write to that volume.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["Dockerfile", "requirements.txt", "app.py"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

@@ -1,0 +1,1 @@
+export { ThemeCustomizer } from '@/ee';

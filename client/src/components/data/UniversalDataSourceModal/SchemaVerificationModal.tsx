@@ -255,7 +255,7 @@ const SchemaVerificationModal: React.FC<SchemaVerificationModalProps> = ({
                 render: (count: number) => count.toLocaleString(),
             },
             {
-                title: t('actions'),
+                align: 'right' as const,
                 key: 'actions',
                 render: (_: any, record: any) => (
                     <Space>

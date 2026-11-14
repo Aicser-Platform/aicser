@@ -8,57 +8,47 @@ export type PricingPlanKey = 'free' | 'pro' | 'team' | 'enterprise';
 export interface PricingPlan {
   name: string;
   plan_type: PricingPlanKey;
+  /** Price per member with Aicser's AI (Pro: the one member; Team: each member). */
   price_monthly: number;
   price_yearly: number;
+  /** Price per Light member: the full platform without Aicser's AI (own model keys work). */
+  price_light_monthly?: number;
+  price_light_yearly?: number;
+  /** Team: members its price covers, each with AI. */
+  min_seats?: number;
+  /** Shown per member rather than per plan. */
+  per_member?: boolean;
   stats: PlanStat[];
   features: string[];
   watermark: boolean;
   trial_days: number;
   popular?: boolean;
-  min_seats?: number;
-  price_per_seat?: number;
-  /** Read-only (org_viewer / project_viewer) seat add-on price — deliberately
-   * far below price_per_seat: industry practice (Tableau Viewer $15 vs
-   * Creator $75/mo) prices read-only access well below build/edit access. */
-  price_per_viewer_seat?: number;
 }
 
 export type UsageLimit = number | -1;
 
-export const aiCreditPolicy = {
-  baseCost: 1,
-  maxCreditsPerRequest: 10,
-  modelMultipliers: {
-    'gpt-5': 1.5,
-    'gpt-4.1': 1.5,
-    'gpt-4o': 1,
-    'gpt-4o-mini': 1,
-    auto: 1.25,
-  },
-  analysisModeMultipliers: {
-    chat: 0.3,
-    descriptive: 0.5,
-    standard: 0.5,
-    diagnostic: 1,
-    predictive: 1,
-    animate: 1,
-    prescriptive: 1.5,
-    executive_report_brief: 1,
-    executive_report_standard: 1.5,
-    executive_report_comprehensive: 2,
-  },
-  datasetTiers: [
-    { thresholdBytes: 1 * 1024 * 1024 * 1024 * 1024, credits: 12 },
-    { thresholdBytes: 1 * 1024 * 1024 * 1024, credits: 6 },
-    { thresholdBytes: 500 * 1024 * 1024, credits: 4 },
-    { thresholdBytes: 10 * 1024 * 1024, credits: 2 },
-    { thresholdBytes: 1 * 1024 * 1024, credits: 1 },
-    { thresholdBytes: 0, credits: 0.5 },
-  ],
-};
+/** One price per member on every paid plan (server: ee/modules/pricing/plans.py SEAT_PRICES). */
+export const MEMBER_PRICES = {
+  ai: { monthly: 18, yearly: 180 },
+  light: { monthly: 6, yearly: 60 },
+} as const;
 
-export const aiCreditFormula =
-  'credits = ceil((ceil(tokens/1000) * modelMultiplier) + datasetCost + (analysisModeMultiplier * baseCost))';
+export const AI_CREDITS_PER_AI_MEMBER = 900;
+
+/** Extra credits, on any plan; they last 12 months (server: plans.CREDIT_PACK). */
+export const CREDIT_PACK = { credits: 1000, price: 10, validDays: 365 } as const;
+
+/** Aicser Personal: one-time desktop license with two years of updates (server: plans.PERSONAL_LICENSE). */
+export const PERSONAL_LICENSE = { price: 149, renewalPrice: 69, updateYears: 2, devices: 3 } as const;
+
+/** Credits cost a fixed amount per action (server: plans.CREDIT_COSTS). */
+export const CREDIT_COSTS = {
+  chat: 0,
+  answer: 1,
+  forecastOrDiagnose: 2,
+  reportDashboardOrDecision: 5,
+  agentStep: 1,
+} as const;
 
 export const planUsageLimits: Record<
   PricingPlanKey,
@@ -70,19 +60,19 @@ export const planUsageLimits: Record<
   }
 > = {
   free: {
-    aiCreditsPerMonth: 30,
+    aiCreditsPerMonth: 100,
     storageGb: 5,
     projectWorkspaces: 1,
     dataSources: 2,
   },
   pro: {
-    aiCreditsPerMonth: 900,
+    aiCreditsPerMonth: AI_CREDITS_PER_AI_MEMBER,
     storageGb: 100,
     projectWorkspaces: -1,
     dataSources: -1,
   },
   team: {
-    aiCreditsPerMonth: 5000,
+    aiCreditsPerMonth: AI_CREDITS_PER_AI_MEMBER,
     storageGb: 500,
     projectWorkspaces: -1,
     dataSources: -1,
@@ -102,17 +92,16 @@ export const pricingPlans: PricingPlan[] = [
     price_monthly: 0,
     price_yearly: 0,
     stats: [
-      { label: 'AI Credits', value: '30 / month' },
+      { label: 'AI Credits', value: '100 / month' },
       { label: 'Storage', value: '5 GB' },
       { label: 'Data History', value: '7 days' },
     ],
     features: [
-      '1 project workspace',
-      '2 data sources',
-      'Charts & Dashboard (with watermark)',
+      '1 member, 1 project, 2 data sources',
+      'Charts and dashboards (with watermark)',
+      'Ask, Forecast and Standard AI modes',
+      'Own AI model keys with limits',
       'Community support',
-      'Chat, Descriptive, Forecast, Animate, and Dashboard',
-      'Export to PNG only',
     ],
     watermark: true,
     trial_days: 0,
@@ -120,24 +109,23 @@ export const pricingPlans: PricingPlan[] = [
   {
     name: 'Pro',
     plan_type: 'pro',
-    price_monthly: 25,
-    price_yearly: 250,
+    price_monthly: MEMBER_PRICES.ai.monthly,
+    price_yearly: MEMBER_PRICES.ai.yearly,
+    price_light_monthly: MEMBER_PRICES.light.monthly,
+    price_light_yearly: MEMBER_PRICES.light.yearly,
     stats: [
       { label: 'AI Credits', value: '900 / month' },
       { label: 'Storage', value: '100 GB' },
       { label: 'Data History', value: '6 months' },
     ],
     features: [
-      'Multiple projects and data sources',
-      'Up to 3 members',
-      'No watermarks',
-      'All AI modes (Chat, Forecast, Diagnose, Optimise, Animate, Report, Dashboard)',
-      'Cross-source analytics',
-      'Telegram Bot Integration',
-      'Theme & brand customization',
+      'For one person',
+      'Multiple projects and data sources, no watermark',
+      'Every AI mode, Aicser Agent and Aicser MCP',
+      'Pipelines, lakehouse, notebooks and sheets',
+      'Embeds and public links (10,000 views / month)',
+      'Exports to High Quality PNG, PDF, Word, PowerPoint and Excel',
       'Priority support',
-      'Branded embed (5,000 views / month)',
-      'Export to PDF, SVG, DOCX, and PPTX',
     ],
     watermark: false,
     trial_days: 14,
@@ -146,28 +134,25 @@ export const pricingPlans: PricingPlan[] = [
   {
     name: 'Team',
     plan_type: 'team',
-    price_monthly: 99,
-    price_yearly: 990,
+    price_monthly: MEMBER_PRICES.ai.monthly,
+    price_yearly: MEMBER_PRICES.ai.yearly,
+    price_light_monthly: MEMBER_PRICES.light.monthly,
+    price_light_yearly: MEMBER_PRICES.light.yearly,
+    per_member: true,
+    min_seats: 5,
     stats: [
-      { label: 'AI Credits', value: '5,000 / month' },
-      { label: 'Per member', value: '1,000' },
+      { label: 'AI Credits', value: '900 / member / month' },
       { label: 'Storage', value: '500 GB' },
       { label: 'Data History', value: '1 year' },
-      { label: 'Seats', value: '5 included' },
     ],
-    min_seats: 5,
-    price_per_seat: 25,
-    price_per_viewer_seat: 6,
     features: [
-      'Everything in Pro',
-      'Team collaboration & comments',
-      'Role-based permissions',
-      'Scheduled reports',
-      'Integrations',
-      'API access',
+      'Everything in Pro, up to 5 members',
+      'Collaboration, discussion and role access management',
+      'Alerts, scheduled reports and scheduled agents',
+      'Governance, PII, Row & Column-level security, catalog and basic audit log',
+      'Connectors, Slack and MS Teams',
+      'Embeds and public links (100,000 views / month)',
       'Dedicated support',
-      '20 viewer seats included ($6 each extra)',
-      '$25 per extra editor seat',
     ],
     watermark: false,
     trial_days: 14,
@@ -181,17 +166,13 @@ export const pricingPlans: PricingPlan[] = [
       { label: 'AI Credits', value: 'Custom' },
       { label: 'Storage', value: 'Custom' },
       { label: 'Data History', value: 'Multi-year' },
-      { label: 'Seats', value: 'Custom' },
     ],
     features: [
       'Everything in Team',
+      'Self-hosted or private cloud, your own models',
+      'SSO, SCIM and data residency',
       'Own branding',
-      'On-premise deployment',
-      'SSO & SAML',
-      'Sovereignty & Compliance',
-      '99.9% SLA',
-      'Dedicated success manager',
-      'Bring your own model',
+      '99.9% SLA and a success manager',
     ],
     watermark: false,
     trial_days: 30,

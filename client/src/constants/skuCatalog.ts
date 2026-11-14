@@ -7,6 +7,7 @@ export type SkuId =
   | 'govern'
   | 'operate'
   | 'decide'
+  | 'agent'
   | 'platform'
   | 'channel'
   | 'industry';
@@ -46,7 +47,7 @@ export const SKU_CATALOG: SkuDefinition[] = [
     name: 'Ask',
     layer: 'core',
     minTier: 'pro',
-    features: ['advanced_ai'],
+    features: ['advanced_ai', 'web_search'],
     navKeys: ['chat', 'knowledge'],
   },
   {
@@ -54,7 +55,7 @@ export const SKU_CATALOG: SkuDefinition[] = [
     name: 'Govern',
     layer: 'core',
     minTier: 'team',
-    features: ['govern', 'audit_logs', 'team_governance'],
+    features: ['govern', 'audit_logs', 'team_governance', 'compliance', 'sso_saml', 'ai_residency', 'custom_roles'],
     navKeys: ['catalog'],
   },
   {
@@ -72,6 +73,14 @@ export const SKU_CATALOG: SkuDefinition[] = [
     minTier: 'pro',
     features: ['decide', 'ai_decisions'],
     navKeys: ['ai-decisions'],
+  },
+  {
+    id: 'agent',
+    name: 'Agent',
+    layer: 'addon',
+    minTier: 'pro',
+    features: ['agent', 'digital_worker', 'code_mode', 'browser_use'],
+    navKeys: ['agent', 'agents'],
   },
   {
     id: 'platform',
@@ -94,7 +103,7 @@ export const SKU_CATALOG: SkuDefinition[] = [
     name: 'Industry packs',
     layer: 'addon',
     minTier: 'team',
-    features: ['industry_packs'],
+    features: ['industry_packs', 'plant'],
     navKeys: [],
   },
 ];
@@ -107,6 +116,8 @@ export const NAV_FEATURE_GATE: Record<string, string> = {
   pipelines: 'lakehouse',
   models: 'ml_models',
   'ai-decisions': 'ai_decisions',
+  agent: 'agent',
+  agents: 'agent',
 };
 
 export function skuForNavKey(key: string): SkuDefinition | undefined {

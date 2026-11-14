@@ -1,0 +1,16 @@
+/* Fonts offered in Docs and Slides (src/lib/office/fonts.ts), bundled from @fontsource (OFL-1.1). Each file
+   only downloads when text in that font and script is drawn (unicode-range). */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/roboto';
+@import '@fontsource-variable/merriweather';
+@import '@fontsource-variable/roboto-mono';
+@import '@fontsource-variable/kantumruy-pro';
+@import '@fontsource-variable/noto-sans-khmer';
+@import '@fontsource-variable/noto-serif-khmer';
+@import '@fontsource/battambang/400.css';
+@import '@fontsource/battambang/700.css';
+@import '@fontsource/hanuman/400.css';
+@import '@fontsource/hanuman/700.css';
+@import '@fontsource/siemreap/400.css';
+@import '@fontsource/moul/400.css';
+@import '@fontsource/koulen/400.css';

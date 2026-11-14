@@ -158,7 +158,8 @@ async def grant_trial_once(
     if current:
         if current["trial_used_at"] is not None:
             return {"outcome": ALREADY_USED, "trial_used_at": current["trial_used_at"]}
-        paid = (current["plan_slug"] or "free") != "free"
+        # A sandbox is not a paid plan: keeping one is exactly when its trial starts.
+        paid = (current["plan_slug"] or "free") not in ("free", "sandbox", "sandbox_guest")
         if paid and _in_effect(current["status"], current["ends_at"], current.get("provider"), now):
             return {"outcome": HAS_PAID_PLAN, "plan_slug": current["plan_slug"]}
 

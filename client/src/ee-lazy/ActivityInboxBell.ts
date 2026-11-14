@@ -1,0 +1,1 @@
+export { ActivityInboxBell } from '@/ee';

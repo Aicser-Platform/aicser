@@ -1,0 +1,1 @@
+export { BillingSuccessHandler } from '@/ee';

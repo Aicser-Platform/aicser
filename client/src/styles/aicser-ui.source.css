@@ -1,0 +1,100 @@
+/* Aicser UI (tailwind.ui.config.ts): the desktop app's design system, scoped to `.aicser-ui`.
+   SOURCE of src/styles/aicser-ui.css, which `npm run ui:css` generates with the Tailwind CLI (kept in git, checked
+   by src/styles/aicser-ui.test.ts). Not built by Next: a second Tailwind config picked with `@config` raced with the
+   main one in parallel webpack builds and compiled globals.css with the wrong config. */
+@tailwind utilities;
+
+/* The scope adds no box of its own: pages and Radix portals wrap their content in it. */
+.aicser-ui {
+  display: contents;
+}
+
+/* Tokens: desktop src/index.css values, as RGB channels (Tailwind 3 opacity modifiers). */
+:root {
+  --ui-radius: 0.625rem;
+  --ui-background: 240 242 245;
+  --ui-foreground: 36 41 47;
+  --ui-card: 255 255 255;
+  --ui-card-foreground: 36 41 47;
+  --ui-popover: 255 255 255;
+  --ui-popover-foreground: 36 41 47;
+  --ui-primary: 0 194 203;
+  --ui-primary-foreground: 13 17 23; /* dark text on primary: white fails contrast */
+  --ui-primary-hover: 5 137 144;
+  --ui-primary-active: 30 119 124;
+  --ui-secondary: 223 228 236;
+  --ui-secondary-foreground: 36 41 47;
+  --ui-muted: 240 242 245;
+  --ui-muted-foreground: 87 96 106;
+  --ui-accent: 223 228 236;
+  --ui-accent-foreground: 36 41 47;
+  --ui-destructive: 231 0 11;
+  --ui-border: 122 127 133;
+  --ui-input: 122 127 133;
+  --ui-ring: 5 137 144;
+  --ui-file-doc: 37 99 235;
+  --ui-file-sheet: 21 128 61;
+  --ui-file-slides: 194 65 12;
+}
+
+html.dark,
+html[data-theme='dark'] {
+  --ui-background: 13 17 23;
+  --ui-foreground: 230 237 243;
+  --ui-card: 22 27 34;
+  --ui-card-foreground: 230 237 243;
+  --ui-popover: 28 33 40;
+  --ui-popover-foreground: 230 237 243;
+  --ui-secondary: 28 36 50;
+  --ui-secondary-foreground: 230 237 243;
+  --ui-muted: 22 27 34;
+  --ui-muted-foreground: 139 148 158;
+  --ui-accent: 28 36 50;
+  --ui-accent-foreground: 230 237 243;
+  --ui-destructive: 255 100 103;
+  --ui-border: 103 113 125;
+  --ui-input: 103 113 125;
+  --ui-ring: 0 194 203;
+  --ui-file-doc: 96 165 250;
+  --ui-file-sheet: 74 222 128;
+  --ui-file-slides: 251 146 60;
+}
+
+/* Base rules the desktop sets in @layer base, inside the scope only. */
+.aicser-ui * {
+  border-color: rgb(var(--ui-border));
+  outline-color: rgb(var(--ui-ring) / 0.5);
+}
+
+/* The app's global `:focus-visible` rule (globals.css) forces an AntD outline, offset and corner radius with
+   !important, which boxed whole editors and menus. Inside the scope focus looks as on desktop: components with
+   their own focus ring (buttons, fields, menus) and text editing surfaces (document page, slide text) get no
+   outline; anything else gets the desktop's ring-coloured outline. */
+.aicser-ui :focus-visible {
+  outline: 2px solid rgb(var(--ui-ring) / 0.5) !important;
+  outline-offset: 0 !important;
+  border-radius: calc(var(--ui-radius) * 0.8) !important;
+}
+
+.aicser-ui [contenteditable]:focus-visible,
+.aicser-ui [role='application']:focus-visible,
+.aicser-ui [role='dialog']:focus-visible,
+.aicser-ui [data-slot]:focus-visible,
+.aicser-ui [role='menu']:focus-visible,
+.aicser-ui [role='menuitem']:focus-visible,
+.aicser-ui [role='menuitemradio']:focus-visible,
+.aicser-ui input:focus-visible,
+.aicser-ui textarea:focus-visible,
+.aicser-ui select:focus-visible {
+  outline: none !important;
+}
+
+/* globals.css forces `position: relative !important` on anything with an overflow-auto class, which pulled
+   scrollable dialogs out of their fixed place: an explicit position class wins inside the scope. */
+.aicser-ui .fixed {
+  position: fixed !important;
+}
+
+.aicser-ui .absolute {
+  position: absolute !important;
+}

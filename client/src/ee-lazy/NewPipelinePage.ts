@@ -1,0 +1,1 @@
+export { NewPipelinePage } from '@/ee';

@@ -1,0 +1,6 @@
+# Optional add-on: Databricks Connect (Spark sessions on a Databricks cluster).
+# Its licence is proprietary, so it is not shipped in the default image. Install it yourself, or build with:
+#   docker build --build-arg WITH_DATABRICKS=true ...
+# By installing it you accept Databricks' licence terms. SQL warehouses need only
+# databricks-sql-connector, which is in requirements.txt.
+databricks-connect==14.3.23

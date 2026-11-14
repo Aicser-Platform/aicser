@@ -7,7 +7,7 @@ import { asDynamicModule } from '@/utils/asDynamicModule';
 
 const EEOnboardingBootstrap = dynamic(
   () =>
-    import('@/ee').then((m) => asDynamicModule(m.OnboardingBootstrap, () => null)),
+    import('@/ee-lazy/OnboardingBootstrap').then((m) => asDynamicModule(m.OnboardingBootstrap, () => null)),
   { ssr: false },
 );
 

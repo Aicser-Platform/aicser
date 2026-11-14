@@ -7,6 +7,7 @@ import type { MenuProps } from 'antd';
 import { useTranslations } from 'next-intl';
 import type { NavItemDef } from './navConfig';
 import { NAV_HINT_KEYS } from './navConfig';
+import { preloadRoute } from './routePreload';
 
 export const RAIL_WIDTH = 64;
 
@@ -51,6 +52,8 @@ export type SidebarNavHandle = {
   dismissOverlays: () => void;
 };
 
+const CHAT_PRELOAD_DELAY_MS = 3000;
+
 type AntMenuItem = Required<MenuProps>['items'][number];
 
 function flattenHrefs(items: NavItemDef[]): Record<string, string> {
@@ -64,12 +67,14 @@ function flattenHrefs(items: NavItemDef[]): Record<string, string> {
   return map;
 }
 
-function linkItem(child: { key: string; labelKey: string }, icons: SidebarNavIconMap, t: (key: string) => string, railCollapsed: boolean): AntMenuItem {
+function linkItem(child: { key: string; labelKey: string; href?: string }, icons: SidebarNavIconMap, t: (key: string) => string, railCollapsed: boolean): AntMenuItem {
   const label = t(child.labelKey);
   const hintKey = NAV_HINT_KEYS[child.key];
   return {
     key: child.key,
     icon: icons[child.key],
+    'data-guide': `nav-${child.key}`,
+    onMouseEnter: child.href ? () => preloadRoute(child.href as string) : undefined,
     label: railCollapsed ? (
       <Tooltip title={hintKey ? `${label} — ${t(hintKey)}` : label} placement="right" mouseEnterDelay={0.35}>
         <span>{label}</span>
@@ -233,6 +238,12 @@ export const SidebarNav = React.forwardRef<SidebarNavHandle, SidebarNavProps>(fu
     }
     setOpenKeys(keys);
   };
+
+  // Ask is where most sessions go next: have it ready once the first page has settled.
+  React.useEffect(() => {
+    const id = window.setTimeout(() => preloadRoute('/chat'), CHAT_PRELOAD_DELAY_MS);
+    return () => window.clearTimeout(id);
+  }, []);
 
   const onClick: MenuProps['onClick'] = ({ key }) => {
     const href = hrefByKey[key];

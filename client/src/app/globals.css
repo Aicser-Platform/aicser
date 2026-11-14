@@ -541,3 +541,26 @@ textarea.ant-input:focus-visible {
   background: transparent !important;
   border: none !important;
 }
+
+.chat-page-skeleton {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 960px;
+  min-height: 60vh;
+  height: 100%;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.chat-page-skeleton__thread {
+  flex: 1;
+}
+
+.chat-page-skeleton__composer {
+  height: 132px;
+  border-radius: 12px;
+  background: var(--ant-color-fill-tertiary);
+}

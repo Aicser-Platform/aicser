@@ -59,7 +59,7 @@ const MonacoSQLEditor = nextDynamic(
 );
 
 const AnimatedAIAvatar = nextDynamic(
-  () => import('@/ee').then((m) => ({ default: m.AnimatedAIAvatar })),
+  () => import('@/ee-lazy/AnimatedAIAvatar').then((m) => ({ default: m.AnimatedAIAvatar })),
   { ssr: false }
 );
 

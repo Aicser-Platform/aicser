@@ -167,7 +167,7 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children, banner
           onClick={handleBackdropClick}
           style={{
             position: 'fixed',
-            top: 64 /* Below header */,
+            top: 'var(--app-header-height, 48px)' /* Below header */,
             left: 0,
             right: 0,
             bottom: 0,

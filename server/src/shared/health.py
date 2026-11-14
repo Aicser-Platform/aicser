@@ -57,7 +57,9 @@ async def collect_health_payload() -> tuple[dict, int]:
     # Redis
     try:
         if cache and getattr(cache, "redis_client", None):
-            cache.redis_client.ping()
+            # Off the event loop and bounded: a blocking ping held every request (and the
+            # container healthcheck) while a model warmed up at startup.
+            await asyncio.wait_for(asyncio.to_thread(cache.redis_client.ping), timeout=2)
             out["redis"] = "up"
         elif cache:
             out["redis"] = "fallback"
@@ -72,18 +74,21 @@ async def collect_health_payload() -> tuple[dict, int]:
 
     # ARQ worker — check if Redis queue is reachable and worker appears active.
     worker_status = "unknown"
-    try:
+
+    def _worker_status() -> str:
         import redis as _redis
 
         _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         _r = _redis.from_url(_redis_url, socket_connect_timeout=1, socket_timeout=1)
-        hb = _r.get("aiser:worker:heartbeat")
-        if hb:
-            worker_status = "up"
-        else:
-            result_keys = _r.keys("arq:result:*")
-            worker_status = "degraded" if result_keys else "down"
-        _r.close()
+        try:
+            if _r.get("aiser:worker:heartbeat"):
+                return "up"
+            return "degraded" if _r.keys("arq:result:*") else "down"
+        finally:
+            _r.close()
+
+    try:
+        worker_status = await asyncio.wait_for(asyncio.to_thread(_worker_status), timeout=3)
     except Exception:
         worker_status = "unavailable"
     out["worker"] = worker_status

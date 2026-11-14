@@ -49,9 +49,13 @@ export function resolveChartPaletteId(
  * palette as plain colours), or null when they're genuinely custom. The product's default
  * palette maps to "inherit": it was never a choice, so the chart should follow its dashboard.
  */
+/** The default palette before 2026-10-30; charts pinned from chat still carry it as "custom". */
+const PREVIOUS_DEFAULT = ['#00c2cb', '#4e79a7', '#f28e2b', '#e15759'];
+
 export function paletteIdForColors(colors: unknown): ChartPaletteId | typeof WIDGET_PALETTE_INHERIT | null {
   if (!Array.isArray(colors) || colors.length === 0) return null;
   const given = colors.slice(0, 4).map((c) => String(c).trim().toLowerCase());
+  if (given.every((c, i) => c === PREVIOUS_DEFAULT[i])) return WIDGET_PALETTE_INHERIT;
   for (const palette of CHART_PALETTE_CATALOG) {
     const ref = palette.colors.slice(0, given.length).map((c) => c.toLowerCase());
     if (ref.length === given.length && ref.every((c, i) => c === given[i])) {

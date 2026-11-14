@@ -17,7 +17,7 @@ const { Text } = Typography;
 export interface KnowledgeDocumentSummaryProps {
   documents: KnowledgeDocument[];
   loading?: boolean;
-  /** Link to full document management (e.g. /knowledge?data_source_id=…) */
+  /** Link to full document management (e.g. /data?tab=documents&data_source_id=…) */
   manageHref?: string;
   emptyDescription?: string;
 }

@@ -12,7 +12,7 @@ function PageFallback() {
 }
 
 const EESupportPage = dynamic(
-  () => import('@/ee').then((m) => ({ default: m.SupportPage })),
+  () => import('@/ee-lazy/SupportPage').then((m) => ({ default: m.SupportPage })),
   { ssr: false, loading: PageFallback },
 );
 

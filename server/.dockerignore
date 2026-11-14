@@ -13,3 +13,6 @@ tests
 .cache
 dist
 build
+
+# Built inside the image so it matches the code and the pinned duckdb; a local copy would win and go stale.
+src/shared/sample_data/duckdb/

@@ -43,4 +43,4 @@ spec:
           livenessProbe:
             {{- toYaml .Values.client.livenessProbe | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.client.livenessProbe | nindent 12 }}
+            {{- toYaml .Values.client.readinessProbe | nindent 12 }}
