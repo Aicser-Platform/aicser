@@ -16,8 +16,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("alert_rules", sa.Column("last_error", sa.String(32), nullable=True))
+    bind = op.get_bind()
+    tables = set(sa.inspect(bind).get_table_names())
+    if "alert_rules" in tables:
+        op.add_column("alert_rules", sa.Column("last_error", sa.String(32), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("alert_rules", "last_error")
+    bind = op.get_bind()
+    tables = set(sa.inspect(bind).get_table_names())
+    if "alert_rules" in tables:
+        op.drop_column("alert_rules", "last_error")

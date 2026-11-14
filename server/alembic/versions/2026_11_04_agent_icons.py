@@ -11,8 +11,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE embed_assistants ADD COLUMN IF NOT EXISTS icon_url TEXT")
+    op.execute("ALTER TABLE IF EXISTS embed_assistants ADD COLUMN IF NOT EXISTS icon_url TEXT")
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE embed_assistants DROP COLUMN IF EXISTS icon_url")
+    op.execute("ALTER TABLE IF EXISTS embed_assistants DROP COLUMN IF EXISTS icon_url")

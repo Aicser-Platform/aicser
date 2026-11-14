@@ -21,6 +21,7 @@ export const PERMISSIONS: Permission[] = [
     { id: 'p14', code: 'dashboard:create', action: 'create', resource: 'dashboard', description: 'Create dashboards' },
     { id: 'p15', code: 'dashboard:edit', action: 'edit', resource: 'dashboard', description: 'Edit dashboards' },
     { id: 'p16', code: 'ai:use', action: 'use', resource: 'ai', description: 'Use AI features' },
+    { id: 'p17', code: 'plugin:manage', action: 'manage', resource: 'plugin', description: 'Manage plug-ins and integrations' },
 ];
 
 // --- MOCK ROLES ---
@@ -40,7 +41,7 @@ export const ROLES: Role[] = [
         displayName: 'Organization Admin',
         scope: RoleScope.ORGANIZATION,
         description: 'Manage organization and projects',
-        permissionCodes: ['org:view', 'org:edit', 'org:manage_users', 'project:*', 'data:*', 'dashboard:*', 'chart:*', 'ai:*']
+        permissionCodes: ['org:view', 'org:edit', 'org:manage_users', 'plugin:manage', 'project:*', 'data:*', 'dashboard:*', 'chart:*', 'ai:*']
     },
     {
         id: 'r_org_member',

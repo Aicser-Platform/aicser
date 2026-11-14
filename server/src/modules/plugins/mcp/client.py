@@ -10,6 +10,7 @@ import socket
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+import httpcore
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -63,25 +64,13 @@ def validate_mcp_url(url: str, allow_private: Optional[bool] = None) -> str:
     # Check literal IP first
     try:
         ip_obj = ipaddress.ip_address(hostname)
+    except ValueError:
+        ip_obj = None
+
+    if ip_obj is not None:
         if _is_disallowed_ip(str(ip_obj)):
             raise McpSSRFError(f"SSRF protection blocked private/reserved IP '{hostname}'")
         return url.strip()
-    except ValueError:
-        pass
-
-    # Resolve DNS and verify all resolved records are public (synchronous check)
-    try:
-        infos = socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
-    except socket.gaierror as exc:
-        raise McpSSRFError(f"Could not resolve MCP hostname '{hostname}': {exc}") from exc
-
-    for info in infos:
-        sockaddr = info[4]
-        resolved_ip = sockaddr[0]
-        if _is_disallowed_ip(resolved_ip):
-            raise McpSSRFError(
-                f"SSRF protection blocked '{hostname}' resolving to non-public IP '{resolved_ip}'"
-            )
 
     return url.strip()
 
@@ -104,11 +93,13 @@ async def async_validate_mcp_host(
 
     try:
         ip_obj = ipaddress.ip_address(clean_host)
+    except ValueError:
+        ip_obj = None
+
+    if ip_obj is not None:
         if _is_disallowed_ip(str(ip_obj)):
             raise McpSSRFError(f"SSRF protection blocked private/reserved IP '{clean_host}'")
         return [str(ip_obj)]
-    except ValueError:
-        pass
 
     try:
         loop = asyncio.get_running_loop()
@@ -136,6 +127,37 @@ async def async_validate_mcp_host(
     return resolved_ips
 
 
+class SSRFSafeNetworkBackend(httpcore.AnyIOBackend):
+    """Network backend pinning connections to public IPs and preventing DNS rebinding attacks."""
+
+    def __init__(self, allow_private: bool = False) -> None:
+        super().__init__()
+        self.allow_private = allow_private
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: Optional[float] = None,
+        local_address: Optional[str] = None,
+        socket_options: Optional[Any] = None,
+    ) -> httpcore.AsyncNetworkStream:
+        resolved_ips = await async_validate_mcp_host(
+            host,
+            port,
+            allow_private=self.allow_private,
+        )
+        # Connect directly to the validated IP to prevent DNS rebinding
+        target_ip = resolved_ips[0]
+        return await super().connect_tcp(
+            host=target_ip,
+            port=port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+
 class SSRFSafeTransport(httpx.AsyncBaseTransport):
     """Async transport wrapper enforcing SSRF validation on DNS resolution and redirect hops."""
 
@@ -145,7 +167,14 @@ class SSRFSafeTransport(httpx.AsyncBaseTransport):
         wrapped_transport: Optional[httpx.AsyncBaseTransport] = None,
     ) -> None:
         self.allow_private = allow_private
-        self.wrapped_transport = wrapped_transport or httpx.AsyncHTTPTransport()
+        if wrapped_transport is not None:
+            self.wrapped_transport = wrapped_transport
+        else:
+            backend = SSRFSafeNetworkBackend(allow_private=allow_private)
+            pool = httpcore.AsyncConnectionPool(network_backend=backend)
+            transport = httpx.AsyncHTTPTransport()
+            transport._pool = pool
+            self.wrapped_transport = transport
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         url_str = str(request.url)

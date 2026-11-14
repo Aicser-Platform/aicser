@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from src.db.session import get_async_session
@@ -131,6 +131,52 @@ def test_admin_endpoints_reject_editor_and_allow_admin(plugin_test_app: FastAPI)
     client = TestClient(plugin_test_app)
     resp_admin = client.get("/api/plugins")
     assert resp_admin.status_code == 200
+
+
+def test_plugin_manage_permission_allows_access_without_org_edit(plugin_test_app: FastAPI, monkeypatch):
+    mock_db = AsyncMock()
+    res = MagicMock()
+    res.scalars.return_value.all.return_value = []
+    res.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = res
+
+    plugin_test_app.dependency_overrides[get_async_session] = lambda: mock_db
+    plugin_test_app.dependency_overrides[auth_scheme] = lambda: {
+        "id": "u-admin",
+        "role": "admin",
+    }
+
+    # Case 1: user has plugin:manage -> allowed 200 even without org:edit
+    async def mock_require_perm_manage(user_id, perm, **kwargs):
+        if perm == "plugin:manage":
+            return
+        raise HTTPException(status_code=403, detail="Forbidden: missing org:edit")
+
+    monkeypatch.setattr("src.modules.plugins.router.require_permission", mock_require_perm_manage)
+    client = TestClient(plugin_test_app)
+    resp = client.get("/api/plugins")
+    assert resp.status_code == 200
+
+    # Case 2: user lacks plugin:manage, falls back to org:edit and succeeds -> 200
+    async def mock_require_perm_fallback(user_id, perm, **kwargs):
+        if perm == "plugin:manage":
+            raise HTTPException(status_code=403, detail="Forbidden: missing plugin:manage")
+        if perm == "org:edit":
+            return
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    monkeypatch.setattr("src.modules.plugins.router.require_permission", mock_require_perm_fallback)
+    resp_fallback = client.get("/api/plugins")
+    assert resp_fallback.status_code == 200
+
+    # Case 3: user lacks both plugin:manage and org:edit -> 403
+    async def mock_require_perm_fail_both(user_id, perm, **kwargs):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    monkeypatch.setattr("src.modules.plugins.router.require_permission", mock_require_perm_fail_both)
+    resp_fail = client.get("/api/plugins")
+    assert resp_fail.status_code == 403
+
 
 
 def test_org_scope_header_spoofing_rejected_with_403(plugin_test_app: FastAPI, monkeypatch):

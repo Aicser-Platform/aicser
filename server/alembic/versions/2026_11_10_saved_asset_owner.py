@@ -13,20 +13,32 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE IF EXISTS saved_asset ADD COLUMN IF NOT EXISTS user_id UUID")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_saved_asset_user_id ON saved_asset (user_id)")
-    op.execute("""
-        DO $$
-        BEGIN
-            IF to_regclass('public.saved_asset') IS NOT NULL AND to_regclass('public.conversation') IS NOT NULL THEN
-                UPDATE saved_asset a SET user_id = c.user_id
-                FROM conversation c
-                WHERE a.conversation_id = c.id AND a.user_id IS NULL AND c.user_id IS NOT NULL;
-            END IF;
-        END $$;
-    """)
+    from alembic import op
+    import sqlalchemy as sa
+    bind = op.get_bind()
+    tables = set(sa.inspect(bind).get_table_names())
+
+    if "saved_asset" in tables:
+        op.execute("ALTER TABLE IF EXISTS saved_asset ADD COLUMN IF NOT EXISTS user_id UUID")
+        op.execute("CREATE INDEX IF NOT EXISTS ix_saved_asset_user_id ON saved_asset (user_id)")
+        op.execute("""
+            DO $$
+            BEGIN
+                IF to_regclass('public.saved_asset') IS NOT NULL AND to_regclass('public.conversation') IS NOT NULL THEN
+                    UPDATE saved_asset a SET user_id = c.user_id
+                    FROM conversation c
+                    WHERE a.conversation_id = c.id AND a.user_id IS NULL AND c.user_id IS NOT NULL;
+                END IF;
+            END $$;
+        """)
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX IF EXISTS ix_saved_asset_user_id")
-    op.execute("ALTER TABLE IF EXISTS saved_asset DROP COLUMN IF EXISTS user_id")
+    from alembic import op
+    import sqlalchemy as sa
+    bind = op.get_bind()
+    tables = set(sa.inspect(bind).get_table_names())
+
+    if "saved_asset" in tables:
+        op.execute("DROP INDEX IF EXISTS ix_saved_asset_user_id")
+        op.execute("ALTER TABLE IF EXISTS saved_asset DROP COLUMN IF EXISTS user_id")

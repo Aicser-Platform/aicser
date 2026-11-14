@@ -96,6 +96,8 @@ export enum Permission {
   PLANT_VIEW = 'plant:view',
   PLANT_EDIT = 'plant:edit',
 
+  PLUGIN_MANAGE = 'plugin:manage',
+
   CATALOG_VIEW = 'catalog:view',
   CATALOG_EDIT = 'catalog:edit',
   CATALOG_ADMIN = 'catalog:admin',
