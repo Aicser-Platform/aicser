@@ -1993,6 +1993,9 @@ async def upsert_data_source_access_grant(
         ) from exc
 
     await db.commit()
+    # Commit expires the grant; reading updated_at afterwards would lazy-load,
+    # which an async session can't do, and the saved grant would report a 500.
+    await db.refresh(grant)
     invalidate_query_result_cache()
     return {
         "success": True,

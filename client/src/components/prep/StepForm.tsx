@@ -1,399 +1,148 @@
-'use client';
-
-import React, { useEffect, useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { Alert, Button, Checkbox, Input, InputNumber, Modal, Radio, Select, Space, Table, Tag, Typography } from 'antd';
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { datePatterns, stepParts, type PrepStep, type PreviewResult, type TypeSpec } from '@/api/prep';
-import { ConditionBuilder, conditionsComplete, type Condition } from './ConditionBuilder';
-import { FormulaEditor } from './FormulaEditor';
-import { convertName, renameAllMapping, stepColumns, steps as build, type Convention } from './recipeSteps';
-import { fetchApi } from '@/utils/api';
+// Ported from ../aicser/client/src/components/prep/StepForm.tsx @ 749d38d (see PORTING.md). UI rewritten; the
+// form logic lives in lib/prep/stepForm.ts. No Predict / AI answer forms on desktop.
+import { Plus, Trash2 } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { datePatterns, type PrepStep, type PreviewResult, type TypeSpec } from '@/api/prep';
+import { Button } from '@/components/aicser-ui/button';
+import { Checkbox } from '@/components/aicser-ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/aicser-ui/dialog';
+import { Input } from '@/components/aicser-ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/aicser-ui/native-select';
+import { Textarea } from '@/components/aicser-ui/textarea';
+import type { Condition } from '@/lib/prep/conditions';
+import { tPrep as t } from '@/lib/prep/i18n';
+import { convertName, renameAllMapping, stepColumns, type Convention } from '@/lib/prep/recipeSteps';
+import {
+  DATE_FORMAT_CHOICES,
+  EXTRACT_PRESETS,
+  NEEDS_ORDER,
+  WINDOW_CALCS,
+  buildStep,
+  headerNames,
+  initialValues,
+  withMeta,
+  type FormKind,
+  type Values,
+} from '@/lib/prep/stepForm';
+import { cn } from '@/lib/ui/utils';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { fetchApi } from '@/utils/api';
+import { ConditionBuilder } from './ConditionBuilder';
+import { Chip, ColumnMulti, ColumnSelect, FormRow, Segmented, Tag } from './controls';
+import { FormulaEditor } from './FormulaEditor';
 
-const { Text } = Typography;
+const AGGS = ['sum', 'count', 'avg', 'min', 'max'] as const;
 
-export type FormKind =
-  | 'rename'
-  | 'rename_all'
-  | 'type_date'
-  | 'type_number'
-  | 'replace'
-  | 'fill'
-  | 'split'
-  | 'extract'
-  | 'mask'
-  | 'change_case'
-  | 'filter_rows'
-  | 'conditional'
-  | 'formula'
-  | 'concat'
-  | 'flatten_json'
-  | 'dedupe'
-  | 'group'
-  | 'unpivot'
-  | 'checks'
-  | 'pivot'
-  | 'merge'
-  | 'append'
-  | 'sql'
-  | 'predict'
-  | 'ai_answer'
-  | 'window'
-  | 'bin'
-  | 'index'
-  | 'top_n'
-  | 'remove_rows'
-  | 'header_rows'
-  | 'split_rows'
-  | 'expand_rows';
-
-/** Calculations across rows, in the order people reach for them. */
-export const WINDOW_CALCS = ['running_total', 'previous', 'difference', 'percent_of_total', 'rank', 'moving_average',
-  'cumulative_percent', 'next', 'dense_rank', 'row_number'] as const;
-const NEEDS_ORDER = new Set(['running_total', 'moving_average', 'previous', 'next', 'difference', 'cumulative_percent']);
-
-/** Column names from one or more header rows: joined, trimmed, never empty, never repeated. */
-export function headerNames(rows: Record<string, unknown>[], columns: string[], joiner: string): Record<string, string> {
-  const used = new Set<string>();
-  const out: Record<string, string> = {};
-  columns.forEach((c) => {
-    const parts = rows.map((r) => String(r[c] ?? '').trim()).filter(Boolean);
-    let name = parts.join(joiner).trim() || c;
-    const base = name;
-    for (let n = 2; used.has(name.toLowerCase()); n += 1) name = `${base} ${n}`;
-    used.add(name.toLowerCase());
-    out[c] = name;
-  });
-  return out;
+function NumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  placeholder,
+}: {
+  label: string;
+  value: unknown;
+  onChange: (n: number | '') => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  placeholder?: string;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <span>{label}</span>
+      <Input
+        type="number"
+        className="h-8 w-24"
+        min={min}
+        max={max}
+        step={step}
+        placeholder={placeholder}
+        value={value === '' || value === null || value === undefined ? '' : String(value)}
+        onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+      />
+    </label>
+  );
 }
 
-/** Which form edits an existing step (others are edited as code). */
-export function formForStep(step: PrepStep): FormKind | null {
-  const [kind, a] = stepParts(step);
-  if (kind === 'set_types') {
-    const specs = Object.values((a.columns as Record<string, TypeSpec>) ?? {});
-    if (specs.length && specs.every((s) => s.type === 'date' || s.type === 'datetime')) return 'type_date';
-    if (specs.length && specs.every((s) => s.type === 'number' || s.type === 'integer' || s.type === 'decimal')) return 'type_number';
-    return null;
-  }
-  const map: Record<string, FormKind> = {
-    rename: 'rename_all', replace: 'replace', fill: 'fill', split: 'split', extract: 'extract', mask: 'mask',
-    change_case: 'change_case', filter_rows: 'filter_rows', conditional: 'conditional', formula: 'formula',
-    concat: 'concat', flatten_json: 'flatten_json', dedupe: 'dedupe', aggregate: 'group', unpivot: 'unpivot',
-    validate: 'checks', pivot: 'pivot', join: 'merge', union: 'append', sql: 'sql',
-    predict: 'predict', ai_answer: 'ai_answer', window: 'window', bin: 'bin', index: 'index', top_n: 'top_n',
-    remove_rows: 'remove_rows', header_rows: 'header_rows', explode: 'expand_rows',
-  };
-  return map[kind] ?? null;
-}
-
-type Values = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-function initialValues(kind: FormKind, columns: string[], selected: string[], existing?: PrepStep, detected?: TypeSpec): Values {
-  const a = existing ? stepParts(existing)[1] : {};
-  const cols = (a.columns as string[] | undefined) ?? selected;
-  switch (kind) {
-    case 'rename':
-      return { column: selected[0], to: selected[0] };
-    case 'rename_all':
-      return { convention: 'snake', mapping: (a.columns as Record<string, string>) ?? null };
-    case 'type_date': {
-      const spec = existing ? Object.values((a.columns as Record<string, TypeSpec>) ?? {})[0] : detected;
-      return {
-        columns: existing ? Object.keys((a.columns as object) ?? {}) : selected,
-        formats: spec?.formats ?? [],
-        withTime: spec?.type === 'datetime',
-        excel: Boolean(spec?.excel_serial),
-        example: '',
-      };
-    }
-    case 'type_number': {
-      const spec = existing ? Object.values((a.columns as Record<string, TypeSpec>) ?? {})[0] : detected;
-      return { columns: existing ? Object.keys((a.columns as object) ?? {}) : selected, locale: spec?.locale ?? 'us', type: spec?.type ?? 'number' };
-    }
-    case 'replace': {
-      const pairs = Object.entries((a.mapping as Record<string, string>) ?? {});
-      if (a.find) pairs.unshift([String(a.find), String(a.replace_with ?? '')]);
-      return { columns: cols, pairs: pairs.length ? pairs : [['', '']], match: a.match ?? (a.regex ? 'regex' : 'contains'), caseSensitive: a.case_sensitive ?? false };
-    }
-    case 'fill':
-      return { columns: cols, strategy: a.strategy ?? 'value', value: a.value ?? '' };
-    case 'split':
-      return {
-        column: (a.column as string) ?? selected[0], mode: a.mode ?? 'whitespace', delimiter: a.delimiter ?? ',',
-        positions: ((a.positions as number[]) ?? []).join(', '), into: ((a.into as string[]) ?? []).join(', '), parts: a.parts ?? 2,
-        keep: Boolean(a.keep_original),
-      };
-    case 'extract':
-      return { column: (a.column as string) ?? selected[0], pattern: a.pattern ?? '(\\d+)', into: a.into ?? `${selected[0] ?? 'value'}_part`, group: a.group_index ?? 1 };
-    case 'mask':
-      return { columns: cols, method: a.method ?? 'hash' };
-    case 'change_case':
-      return { columns: cols, case: a.case ?? 'title' };
-    case 'filter_rows':
-      return {
-        conditions: (a.conditions as Condition[]) ?? [{ column: selected[0] ?? columns[0] ?? '', op: 'equals', value: '' }],
-        match: a.match ?? 'all', action: a.action ?? 'keep',
-      };
-    case 'conditional':
-      return {
-        into: a.into ?? 'category',
-        rules: (a.rules as unknown[]) ?? [{ conditions: [{ column: selected[0] ?? columns[0] ?? '', op: 'gt', value: '' }], match: 'all', then: { value: '' } }],
-        otherwise: a.otherwise ?? { value: '' },
-      };
-    case 'formula':
-      return { into: a.into ?? 'new_column', expression: a.expression ?? '', language: a.language ?? 'excel' };
-    case 'concat':
-      return { columns: cols.length >= 2 ? cols : [], into: a.into ?? 'combined', separator: a.separator ?? ' ' };
-    case 'sql':
-      return { query: (a.query as string) ?? 'SELECT *\nFROM {input}' };
-    case 'flatten_json':
-      return { column: (a.column as string) ?? selected[0], fields: Object.keys((a.fields as object) ?? {}).join(', ') };
-    case 'dedupe':
-      return { columns: (a.keys as string[]) ?? selected };
-    case 'group':
-      return { by: (a.by as string[]) ?? selected, sum: a.sum ?? [], count: a.count ?? [], avg: a.avg ?? [], min: a.min ?? [], max: a.max ?? [] };
-    case 'unpivot':
-      return { columns: cols, name: a.name_column ?? 'attribute', value: a.value_column ?? 'value' };
-    case 'checks': {
-      const accepted = Object.entries((a.accepted_values as Record<string, string[]>) ?? {})[0];
-      const range = Object.entries((a.range as Record<string, unknown[]>) ?? {})[0];
-      return {
-        notNull: (a.not_null as string[]) ?? selected, unique: (a.unique as string[]) ?? [],
-        acceptedColumn: accepted?.[0], acceptedValues: (accepted?.[1] ?? []).join(', '),
-        rangeColumn: range?.[0], rangeMin: range?.[1]?.[0] ?? '', rangeMax: range?.[1]?.[1] ?? '',
-        onFail: a.on_fail ?? 'quarantine',
-      };
-    }
-    case 'pivot':
-      return { on: a.on ?? selected[0], using: a.using, agg: a.agg ?? 'sum', groupBy: (a.group_by as string[]) ?? [] };
-    case 'merge': {
-      const pairs = Object.entries((a.on as Record<string, string>) ?? {});
-      return { asset: a.asset, how: a.how ?? 'left', pairs: pairs.length ? pairs : [[selected[0] ?? '', '']], match: a.match ?? 'exact', threshold: a.threshold ?? 0.9 };
-    }
-    case 'append':
-      return { asset: a.asset, all: a.all ?? true };
-    case 'predict':
-      return { model_id: a.model_id, into: a.into ?? '' };
-    case 'ai_answer':
-      return { decision_id: a.decision_id, columns: cols, into: a.into ?? '' };
-    case 'window':
-      return {
-        calc: a.calc ?? 'running_total', column: (a.column as string) ?? selected[0], into: a.into ?? '',
-        partitionBy: (a.partition_by as string[]) ?? [], orderBy: a.order_by, descending: Boolean(a.descending),
-        size: a.size ?? 3, offset: a.offset ?? 1,
-      };
-    case 'bin':
-      return {
-        column: (a.column as string) ?? selected[0], into: a.into ?? `${selected[0] ?? 'value'}_range`, mode: a.mode ?? 'edges',
-        edges: ((a.edges as number[]) ?? []).join(', '), count: a.count ?? 4, labels: ((a.labels as string[]) ?? []).join(', '),
-      };
-    case 'index':
-      return { into: a.into ?? 'row_no', start: a.start ?? 1, partitionBy: (a.partition_by as string[]) ?? [], orderBy: a.order_by, descending: Boolean(a.descending) };
-    case 'top_n':
-      return { n: a.n ?? 3, orderBy: a.order_by ?? selected[0], descending: a.descending ?? true, partitionBy: (a.partition_by as string[]) ?? [] };
-    case 'remove_rows':
-      return { top: a.top ?? 1, bottom: a.bottom ?? 0 };
-    case 'header_rows':
-      return { skip: a.skip ?? 0, rows: a.rows ?? 1, joiner: ' ', names: (a.names as Record<string, string>) ?? null };
-    case 'split_rows':
-      return { column: (a.column as string) ?? selected[0], format: 'auto', delimiter: ',' };
-    case 'expand_rows': {
-      const picked = ((a.columns as string[]) ?? []).length ? (a.columns as string[]) : a.column ? [a.column as string] : selected;
-      return { columns: picked, format: a.json === false ? 'text' : 'json', delimiter: a.delimiter ?? ',' };
-    }
-  }
-}
-
-const listOf = (text: string) => text.split(',').map((s) => s.trim()).filter(Boolean);
-
-export function buildStep(kind: FormKind, v: Values, columns: string[]): PrepStep | null {
-  switch (kind) {
-    case 'rename':
-      return v.to && v.to !== v.column ? build.rename(v.column, v.to.trim()) : null;
-    case 'rename_all': {
-      const mapping = v.mapping ?? renameAllMapping(columns, v.convention as Convention);
-      return mapping && Object.keys(mapping).length ? build.renameMany(mapping) : null;
-    }
-    case 'type_date':
-      return v.columns?.length && (v.formats.length || v.excel)
-        ? { set_types: { columns: Object.fromEntries(v.columns.map((c: string) => [c, { type: v.withTime ? 'datetime' : 'date', formats: v.formats, ...(v.excel ? { excel_serial: true } : {}) }])) } }
-        : null;
-    case 'type_number':
-      return v.columns?.length ? { set_types: { columns: Object.fromEntries(v.columns.map((c: string) => [c, { type: v.type, locale: v.locale }])) } } : null;
-    case 'replace': {
-      const pairs = Object.fromEntries((v.pairs as string[][]).filter(([f]) => f !== ''));
-      return v.columns?.length && Object.keys(pairs).length ? build.replace(v.columns, pairs, v.match, v.caseSensitive) : null;
-    }
-    case 'fill': {
-      if (!v.columns?.length) return null;
-      const raw = String(v.value ?? '');
-      const num = Number(raw);
-      return build.fill(v.columns, v.strategy, v.strategy === 'value' ? (raw !== '' && Number.isFinite(num) ? num : raw) : undefined);
-    }
-    case 'split': {
-      if (!v.column) return null;
-      const positions = listOf(String(v.positions)).map(Number).filter((n) => Number.isFinite(n) && n > 0);
-      if (v.mode === 'positions' && !positions.length) return null;
-      return build.split(v.column, {
-        mode: v.mode, delimiter: v.mode === 'delimiter' || v.mode === 'rows' ? v.delimiter : undefined,
-        positions: v.mode === 'positions' ? positions : undefined, into: listOf(String(v.into)), parts: Number(v.parts) || 2,
-        ...(v.keep ? { keep_original: true } : {}),
-      } as never);
-    }
-    case 'extract':
-      return v.column && v.pattern && v.into ? build.extract(v.column, v.pattern, v.into.trim(), Number(v.group) || 0) : null;
-    case 'mask':
-      return v.columns?.length ? build.mask(v.columns, v.method) : null;
-    case 'change_case':
-      return v.columns?.length ? build.changeCase(v.columns, v.case) : null;
-    case 'filter_rows':
-      return conditionsComplete(v.conditions) ? { filter_rows: { conditions: v.conditions, match: v.match, action: v.action } } : null;
-    case 'conditional': {
-      const rules = (v.rules as { conditions: Condition[] }[]);
-      if (!v.into || !rules.length || !rules.every((r) => conditionsComplete(r.conditions))) return null;
-      return { conditional: { into: v.into.trim(), rules, otherwise: v.otherwise, ...(columns.includes(v.into.trim()) ? { replace: true } : {}) } };
-    }
-    case 'formula':
-      return v.into && v.expression.trim() ? build.formula(v.into.trim(), v.expression, v.language, columns.includes(v.into.trim())) : null;
-    case 'concat':
-      return v.columns?.length >= 2 && v.into ? build.concat(v.columns, v.into.trim(), v.separator) : null;
-    case 'sql': {
-      // One statement over the previous step's result, which the engine names {input}.
-      const query = String(v.query ?? '').trim().replace(/;\s*$/, '');
-      return query.includes('{input}') && !query.includes(';') ? { sql: { query } } : null;
-    }
-    case 'flatten_json': {
-      const fields = Object.fromEntries(listOf(String(v.fields)).map((f) => [f.replace(/[^A-Za-z0-9_]/g, '_'), `$.${f}`]));
-      return v.column && Object.keys(fields).length ? build.flattenJson(v.column, fields) : null;
-    }
-    case 'dedupe':
-      return v.columns?.length ? build.dedupeBy(v.columns) : build.dedupeRows();
-    case 'group': {
-      const measures = ['sum', 'count', 'avg', 'min', 'max'].reduce((acc, k) => (v[k]?.length ? { ...acc, [k]: v[k] } : acc), {});
-      return Object.keys(measures).length ? { aggregate: { by: v.by ?? [], ...measures } } : null;
-    }
-    case 'unpivot':
-      return v.columns?.length ? { unpivot: { columns: v.columns, name_column: v.name || 'attribute', value_column: v.value || 'value' } } : null;
-    case 'checks': {
-      const rules: Record<string, unknown> = {};
-      if (v.notNull?.length) rules.not_null = v.notNull;
-      if (v.unique?.length) rules.unique = v.unique;
-      if (v.acceptedColumn && listOf(String(v.acceptedValues)).length) rules.accepted_values = { [v.acceptedColumn]: listOf(String(v.acceptedValues)) };
-      if (v.rangeColumn && String(v.rangeMin) !== '' && String(v.rangeMax) !== '') {
-        rules.range = { [v.rangeColumn]: [Number(v.rangeMin), Number(v.rangeMax)] };
-      }
-      return Object.keys(rules).length ? { validate: { ...rules, on_fail: v.onFail } } : null;
-    }
-    case 'pivot':
-      return v.on && v.using ? { pivot: { on: v.on, using: v.using, agg: v.agg, ...(v.groupBy?.length ? { group_by: v.groupBy } : {}) } } : null;
-    case 'merge': {
-      const on = Object.fromEntries((v.pairs as string[][]).filter(([l, r]) => l && r));
-      const similar = v.match === 'similar' ? { match: 'similar', threshold: Number(v.threshold) || 0.9 } : {};
-      return v.asset && Object.keys(on).length ? { join: { asset: v.asset, how: v.how, on, ...similar } } : null;
-    }
-    case 'append':
-      return v.asset ? { union: { asset: v.asset, all: v.all } } : null;
-    case 'predict':
-      return v.model_id ? { predict: { model_id: v.model_id, ...(String(v.into ?? '').trim() ? { into: v.into.trim() } : {}) } } : null;
-    case 'ai_answer':
-      return v.decision_id && v.columns?.length
-        ? { ai_answer: { decision_id: v.decision_id, columns: v.columns, ...(String(v.into ?? '').trim() ? { into: v.into.trim() } : {}) } }
-        : null;
-    case 'window': {
-      const into = String(v.into ?? '').trim() || `${v.calc}_${v.column ?? 'value'}`;
-      if (v.calc !== 'row_number' && !v.column) return null;
-      if (NEEDS_ORDER.has(v.calc) && !v.orderBy) return null;
-      return {
-        window: {
-          calc: v.calc, ...(v.column ? { column: v.column } : {}), into,
-          ...(v.partitionBy?.length ? { partition_by: v.partitionBy } : {}), ...(v.orderBy ? { order_by: v.orderBy } : {}),
-          ...(v.descending ? { descending: true } : {}),
-          ...(v.calc === 'moving_average' ? { size: Number(v.size) || 3 } : {}),
-          ...(v.calc === 'previous' || v.calc === 'next' ? { offset: Number(v.offset) || 1 } : {}),
-        },
-      };
-    }
-    case 'bin': {
-      if (!v.column || !String(v.into ?? '').trim()) return null;
-      if (v.mode === 'edges') {
-        const edges = listOf(String(v.edges)).map(Number).filter(Number.isFinite);
-        const labels = listOf(String(v.labels));
-        if (!edges.length) return null;
-        return { bin: { column: v.column, into: v.into.trim(), mode: 'edges', edges, ...(labels.length ? { labels } : {}) } };
-      }
-      return { bin: { column: v.column, into: v.into.trim(), mode: v.mode, count: Number(v.count) || 4 } };
-    }
-    case 'index':
-      return String(v.into ?? '').trim()
-        ? {
-            index: {
-              into: v.into.trim(), start: Number(v.start) || 1, ...(v.partitionBy?.length ? { partition_by: v.partitionBy } : {}),
-              ...(v.orderBy ? { order_by: v.orderBy, ...(v.descending ? { descending: true } : {}) } : {}),
-            },
-          }
-        : null;
-    case 'top_n':
-      return v.orderBy && Number(v.n) >= 1
-        ? { top_n: { n: Number(v.n), order_by: v.orderBy, descending: Boolean(v.descending), ...(v.partitionBy?.length ? { partition_by: v.partitionBy } : {}) } }
-        : null;
-    case 'remove_rows': {
-      const top = Math.max(0, Number(v.top) || 0);
-      const bottom = Math.max(0, Number(v.bottom) || 0);
-      return top || bottom ? { remove_rows: { ...(top ? { top } : {}), ...(bottom ? { bottom } : {}) } } : null;
-    }
-    case 'header_rows':
-      return v.names && Object.keys(v.names).length
-        ? { header_rows: { skip: Number(v.skip) || 0, rows: Number(v.rows) || 1, names: v.names } }
-        : null;
-    case 'split_rows': {
-      if (!v.column) return null;
-      return v.format === 'json'
-        ? { explode: { columns: [v.column], json: true } }
-        : { explode: { columns: [v.column], json: false, delimiter: v.delimiter || ',' } };
-    }
-    case 'expand_rows':
-      return v.columns?.length
-        ? { explode: { columns: v.columns, ...(v.format === 'text' ? { json: false, delimiter: v.delimiter || ',' } : { json: true }) } }
-        : null;
-  }
+/** Before → after names, editable (rename all, header rows). */
+function NameTable({
+  names,
+  empty,
+  onChange,
+}: {
+  names: Record<string, string>;
+  empty?: string;
+  onChange: (from: string, to: string) => void;
+}) {
+  const rows = Object.entries(names);
+  return (
+    <div className="max-h-64 overflow-y-auto rounded-lg border">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-muted text-left">
+          <tr>
+            <th className="px-2 py-1 font-medium">{t('col_before')}</th>
+            <th className="px-2 py-1 font-medium">{t('col_after')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([from, to]) => (
+            <tr key={from} className="border-t">
+              <td className="px-2 py-1">{from}</td>
+              <td className="px-2 py-1">
+                <Input className="h-7" value={to} aria-label={from} onChange={(e) => onChange(from, e.target.value)} />
+              </td>
+            </tr>
+          ))}
+          {!rows.length && (
+            <tr>
+              <td colSpan={2} className="px-2 py-3 text-center text-muted-foreground">
+                {empty}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 type AiChoice = { value: string; label: string; ready: boolean };
 
-/** Approved prediction models, or AI decisions, the recipe's project can use. */
+/** Web: approved prediction models, or AI decisions, the recipe's project can use (Predict / AI answer steps). */
 function useAiChoices(kind: FormKind): AiChoice[] | null {
   const projectId = useProjectStore((s) => s.currentProjectId);
   const [choices, setChoices] = useState<AiChoice[] | null>(null);
   useEffect(() => {
     if (kind !== 'predict' && kind !== 'ai_answer') return;
     const qs = projectId ? `?project_id=${encodeURIComponent(String(projectId))}` : '';
-    const load = kind === 'predict'
-      ? fetchApi<{ items?: { id: string; name: string; task: string; production?: unknown }[] }>(`/api/models${qs}`)
-          .then((r) => (r.items ?? []).filter((m) => m.task !== 'forecast').map((m) => ({ value: m.id, label: m.name, ready: Boolean(m.production) })))
-      : fetchApi<{ definitions?: { id: string; name: string }[] }>(`/api/ai-decisions/definitions${qs}`)
-          .then((r) => (r.definitions ?? []).map((d) => ({ value: d.id, label: d.name, ready: true })));
+    const load =
+      kind === 'predict'
+        ? fetchApi<{ items?: { id: string; name: string; task: string; production?: unknown }[] }>(`/api/models${qs}`).then(
+            (r) =>
+              (r.items ?? [])
+                .filter((m) => m.task !== 'forecast')
+                .map((m) => ({ value: m.id, label: m.name, ready: Boolean(m.production) }))
+          )
+        : fetchApi<{ definitions?: { id: string; name: string }[] }>(`/api/ai-decisions/definitions${qs}`).then((r) =>
+            (r.definitions ?? []).map((d) => ({ value: d.id, label: d.name, ready: true }))
+          );
     load.then(setChoices).catch(() => setChoices([]));
   }, [kind, projectId]);
   return choices;
 }
 
-/** Patterns people reach for most, so Extract doesn't start from a blank regex. */
-const EXTRACT_PRESETS = [
-  { key: 'first_number', pattern: '(\\d+)', group: 1 },
-  { key: 'decimal_number', pattern: '(-?\\d+(?:[.,]\\d+)?)', group: 1 },
-  { key: 'letters', pattern: '([A-Za-z]+)', group: 1 },
-  { key: 'in_brackets', pattern: '\\(([^)]*)\\)', group: 1 },
-  { key: 'email_domain', pattern: '@([^\\s>]+)', group: 1 },
-  { key: 'year', pattern: '((?:19|20)\\d{2})', group: 1 },
-];
-
-const DATE_FORMAT_CHOICES = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%d %b %Y', '%d-%b-%Y', '%b %d, %Y', '%d.%m.%Y', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S'];
-
 export function StepForm({
   kind,
-  open,
   columns,
   selected,
   existing,
@@ -405,7 +154,6 @@ export function StepForm({
   onCancel,
 }: {
   kind: FormKind;
-  open: boolean;
   columns: string[];
   selected: string[];
   existing?: PrepStep;
@@ -419,77 +167,119 @@ export function StepForm({
   onSubmit: (step: PrepStep) => void;
   onCancel: () => void;
 }) {
-  const t = useTranslations('prepare');
-  const [v, setV] = useState<Values>(() => initialValues(kind, columns, selected, existing, detected));
-  const [draftState, setDraft] = useState<PreviewResult | null>(null);
-  const [draftErrorState, setDraftError] = useState<string | null>(null);
+  const aiChoices = useAiChoices(kind);
+  const [v, setV] = useState<Values>(() => {
+    const init = initialValues(kind, columns, selected, existing, detected);
+    // Split into rows: look at the column's values to choose a JSON list or a delimiter, so the common case needs
+    // no setting at all.
+    if (kind === 'split_rows' && init.format === 'auto') {
+      const values = before
+        .map((r) => String(r[init.column] ?? '').trim())
+        .filter(Boolean)
+        .slice(0, 50);
+      if (values.length && values.every((x) => x.startsWith('[') && x.endsWith(']')))
+        return { ...init, format: 'json' };
+      const best = [';', '|', ',', '\n']
+        .map((d) => [d, values.filter((x) => x.includes(d)).length] as const)
+        .sort((a, b) => b[1] - a[1])[0];
+      return { ...init, format: 'text', delimiter: best && best[1] ? best[0] : ',' };
+    }
+    return init;
+  });
+  const [draftState, setDraftState] = useState<PreviewResult | null>(null);
+  const [draftErrorState, setDraftErrorState] = useState<string | null>(null);
   const [formulaOk, setFormulaOk] = useState(true);
   const set = (patch: Values) => setV((cur) => ({ ...cur, ...patch }));
-  const aiChoices = useAiChoices(kind);
-  // Split into rows: look at the column's values to choose a JSON list or a delimiter, so the
-  // common case needs no setting at all.
-  useEffect(() => {
-    if (kind !== 'split_rows' || v.format !== 'auto') return;
-    const values = before.map((r) => String(r[v.column] ?? '').trim()).filter(Boolean).slice(0, 50);
-    if (values.length && values.every((x) => x.startsWith('[') && x.endsWith(']'))) {
-      set({ format: 'json' });
-      return;
-    }
-    const delimiter = [';', '|', ',', '\n'].map((d) => [d, values.filter((x) => x.includes(d)).length] as const)
-      .sort((a, b) => b[1] - a[1])[0];
-    set({ format: 'text', delimiter: delimiter && delimiter[1] ? delimiter[0] : ',' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, v.format, v.column]);
   const step = useMemo(() => buildStep(kind, v, columns), [kind, v, columns]);
   const ready = Boolean(step) && (kind !== 'formula' || formulaOk);
+  const stepKey = JSON.stringify(step);
 
   useEffect(() => {
-    if (!step || (kind === 'formula' && !formulaOk)) return;
-    const handle = setTimeout(async () => {
-      try {
-        const res = await runDraft(step);
-        setDraft(res);
-        setDraftError(res.step_errors[0]?.message ?? null);
-      } catch (err) {
-        setDraftError(err instanceof Error ? err.message : String(err));
-      }
+    if (!step || (kind === 'formula' && !formulaOk)) return undefined;
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      runDraft(step)
+        .then((res) => {
+          if (cancelled) return;
+          setDraftState(res);
+          setDraftErrorState(res.step_errors[0]?.message ?? null);
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) setDraftErrorState(err instanceof Error ? err.message : String(err));
+        });
     }, 400);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(step), formulaOk]);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+    // `step` is rebuilt every render; its JSON says when it really changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on stepKey
+  }, [stepKey, formulaOk, kind]);
 
   const multi = (field: string, label: string, min = 1) => (
-    <Space direction="vertical" size={2} style={{ width: '100%' }}>
-      <Text strong>{label}</Text>
-      <Select
-        mode="multiple"
+    <FormRow label={label}>
+      <ColumnMulti
+        label={label}
         value={v[field]}
+        options={columns}
+        min={min}
         onChange={(val) => set({ [field]: val })}
-        options={columns.map((c) => ({ value: c, label: c }))}
-        style={{ width: '100%' }}
-        aria-label={label}
-        status={(v[field]?.length ?? 0) < min ? 'warning' : undefined}
       />
-    </Space>
+    </FormRow>
   );
-  const single = (field: string, label: string) => (
-    <Space direction="vertical" size={2} style={{ width: '100%' }}>
-      <Text strong>{label}</Text>
-      <Select showSearch value={v[field]} onChange={(val) => set({ [field]: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ width: '100%' }} aria-label={label} />
-    </Space>
+  const single = (
+    field: string,
+    label: string,
+    opts: { allowEmpty?: boolean; warn?: boolean; options?: string[] } = {}
+  ) => (
+    <FormRow label={label}>
+      <ColumnSelect
+        label={label}
+        value={v[field]}
+        options={opts.options ?? columns}
+        allowEmpty={opts.allowEmpty}
+        warn={opts.warn}
+        onChange={(val) => set({ [field]: val })}
+      />
+    </FormRow>
   );
-  const text = (field: string, label: string, placeholder?: string, extra?: string) => (
-    <Space direction="vertical" size={2} style={{ width: '100%' }}>
-      <Text strong>{label}</Text>
-      <Input value={v[field]} placeholder={placeholder} onChange={(e) => set({ [field]: e.target.value })} aria-label={label} />
-      {extra ? <Text type="secondary" style={{ fontSize: 12 }}>{extra}</Text> : null}
-    </Space>
+  const text = (field: string, label: string, placeholder?: string, hint?: string) => (
+    <FormRow label={label} hint={hint}>
+      <Input
+        value={v[field] ?? ''}
+        placeholder={placeholder}
+        aria-label={label}
+        onChange={(e) => set({ [field]: e.target.value })}
+      />
+    </FormRow>
   );
+  const choice = <T extends string>(field: string, label: string, options: { value: T; label: ReactNode }[]) => (
+    <Segmented label={label} value={v[field] as T} options={options} onChange={(val) => set({ [field]: val })} />
+  );
+  const pairRows = (field: string, render: (pair: string[], i: number, setPair: (p: string[]) => void) => ReactNode) =>
+    (v[field] as string[][]).map((pair, i) => (
+      <div key={i} className="flex items-center gap-2">
+        {render(pair, i, (p) => set({ [field]: v[field].map((x: string[], j: number) => (j === i ? p : x)) }))}
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t('remove_pair')}
+          disabled={v[field].length === 1}
+          onClick={() => set({ [field]: v[field].filter((_: unknown, j: number) => j !== i) })}
+        >
+          <Trash2 />
+        </Button>
+      </div>
+    ));
 
   const addFromExample = async () => {
-    const found = await datePatterns(v.example);
-    if (found.length) set({ formats: Array.from(new Set([...v.formats, found[0]])), example: '' });
-    else set({ exampleMiss: true });
+    try {
+      const found = await datePatterns(v.example);
+      if (found[0]) set({ formats: Array.from(new Set([...v.formats, found[0]])), example: '' });
+      else set({ exampleMiss: true });
+    } catch {
+      set({ exampleMiss: true });
+    }
   };
 
   const body = (() => {
@@ -497,539 +287,791 @@ export function StepForm({
       case 'rename':
         return text('to', t('field_new_name'));
       case 'rename_all': {
-        const mapping = v.mapping ?? renameAllMapping(columns, v.convention);
+        const mapping: Record<string, string> | null = v.mapping ?? renameAllMapping(columns, v.convention);
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            {v.mapping ? null : (
-              <Radio.Group value={v.convention} onChange={(e) => set({ convention: e.target.value })}>
-                {(['snake', 'title', 'camel', 'lower', 'upper'] as Convention[]).map((c) => (
-                  <Radio.Button key={c} value={c}>{convertName('Student ID', c)}</Radio.Button>
-                ))}
-              </Radio.Group>
-            )}
-            {mapping === null ? <Alert type="warning" showIcon message={t('rename_collision')} /> : null}
-            <Table
-              size="small"
-              pagination={false}
-              rowKey="from"
-              scroll={{ y: 260 }}
-              dataSource={Object.entries(mapping ?? {}).map(([from, to]) => ({ from, to }))}
-              columns={[
-                { title: t('col_before'), dataIndex: 'from' },
-                {
-                  title: t('col_after'),
-                  dataIndex: 'to',
-                  render: (to: string, row: { from: string }) => (
-                    <Input size="small" value={to} onChange={(e) => set({ mapping: { ...(mapping ?? {}), [row.from]: e.target.value } })} aria-label={row.from} />
-                  ),
-                },
-              ]}
-              locale={{ emptyText: t('rename_nothing') }}
+          <>
+            {!v.mapping &&
+              choice<Convention>(
+                'convention',
+                t('form_rename_all'),
+                (['snake', 'title', 'camel', 'lower', 'upper'] as Convention[]).map((c) => ({
+                  value: c,
+                  label: convertName('Student ID', c),
+                }))
+              )}
+            {mapping === null && <p className="text-sm text-(--layer-bronze)">{t('rename_collision')}</p>}
+            <NameTable
+              names={mapping ?? {}}
+              empty={t('rename_nothing')}
+              onChange={(from, to) => set({ mapping: { ...(mapping ?? {}), [from]: to } })}
             />
-          </Space>
+          </>
         );
       }
       case 'type_date':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_columns'))}
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-              <Text strong>{t('field_date_formats')}</Text>
-              <Select
-                mode="tags"
-                value={v.formats}
-                onChange={(val) => set({ formats: val })}
-                options={DATE_FORMAT_CHOICES.map((f) => ({ value: f, label: f }))}
-                style={{ width: '100%' }}
-                placeholder="%d-%b-%Y"
-                aria-label={t('field_date_formats')}
+            <FormRow label={t('field_date_formats')} hint={t('field_date_formats_hint')}>
+              <div className="flex flex-wrap gap-1">
+                {Array.from(new Set([...DATE_FORMAT_CHOICES, ...(v.formats as string[])])).map((f) => (
+                  <Chip
+                    key={f}
+                    checked={(v.formats as string[]).includes(f)}
+                    onClick={() =>
+                      set({
+                        formats: (v.formats as string[]).includes(f)
+                          ? v.formats.filter((x: string) => x !== f)
+                          : [...v.formats, f],
+                      })
+                    }
+                  >
+                    <span className="font-mono">{f}</span>
+                  </Chip>
+                ))}
+              </div>
+            </FormRow>
+            <div className="flex gap-2">
+              <Input
+                value={v.example}
+                onChange={(e) => set({ example: e.target.value, exampleMiss: false })}
+                placeholder={t('date_example_placeholder')}
+                aria-label={t('date_example')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void addFromExample();
+                  }
+                }}
               />
-              <Text type="secondary" style={{ fontSize: 12 }}>{t('field_date_formats_hint')}</Text>
-            </Space>
-            <Space.Compact style={{ width: '100%' }}>
-              <Input value={v.example} onChange={(e) => set({ example: e.target.value, exampleMiss: false })} placeholder={t('date_example_placeholder')} aria-label={t('date_example')} onPressEnter={() => void addFromExample()} />
-              <Button onClick={() => void addFromExample()} disabled={!v.example?.trim()}>{t('date_example_add')}</Button>
-            </Space.Compact>
-            {v.exampleMiss ? <Text type="warning">{t('date_example_miss')}</Text> : null}
-            {detected?.ambiguous ? <Alert type="info" showIcon message={t('date_ambiguous')} /> : null}
-            <Checkbox checked={v.withTime} onChange={(e) => set({ withTime: e.target.checked })}>{t('date_with_time')}</Checkbox>
-            <Checkbox checked={v.excel} onChange={(e) => set({ excel: e.target.checked })}>{t('date_excel_serial')}</Checkbox>
-          </Space>
+              <Button variant="outline" onClick={() => void addFromExample()} disabled={!v.example?.trim()}>
+                {t('date_example_add')}
+              </Button>
+            </div>
+            {v.exampleMiss && <p className="text-sm text-(--layer-bronze)">{t('date_example_miss')}</p>}
+            {detected?.ambiguous && <p className="text-sm text-muted-foreground">{t('date_ambiguous')}</p>}
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={Boolean(v.withTime)} onCheckedChange={(c) => set({ withTime: c === true })} />
+              {t('date_with_time')}
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={Boolean(v.excel)} onCheckedChange={(c) => set({ excel: c === true })} />
+              {t('date_excel_serial')}
+            </label>
+          </>
         );
       case 'type_number':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_columns'))}
-            <Radio.Group value={v.type} onChange={(e) => set({ type: e.target.value })}>
-              <Radio value="number">{t('type_number')}</Radio>
-              <Radio value="integer">{t('type_integer')}</Radio>
-              <Radio value="decimal">{t('type_decimal')}</Radio>
-            </Radio.Group>
-            <Radio.Group value={v.locale} onChange={(e) => set({ locale: e.target.value })}>
-              <Radio value="us">{t('locale_us')}</Radio>
-              <Radio value="eu">{t('locale_eu')}</Radio>
-            </Radio.Group>
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('number_hint')}</Text>
-          </Space>
+            {choice('type', t('action_change_type'), [
+              { value: 'number', label: t('type_number') },
+              { value: 'integer', label: t('type_integer') },
+              { value: 'decimal', label: t('type_decimal') },
+            ])}
+            {choice('locale', t('number_hint'), [
+              { value: 'us', label: t('locale_us') },
+              { value: 'eu', label: t('locale_eu') },
+            ])}
+            <p className="text-xs text-muted-foreground">{t('number_hint')}</p>
+          </>
         );
       case 'replace':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_columns'))}
-            <Radio.Group value={v.match} onChange={(e) => set({ match: e.target.value })}>
-              <Radio.Button value="contains">{t('match_contains')}</Radio.Button>
-              <Radio.Button value="whole">{t('match_whole')}</Radio.Button>
-              <Radio.Button value="regex">{t('match_regex')}</Radio.Button>
-            </Radio.Group>
-            {(v.pairs as string[][]).map(([find, rep], i) => (
-              <Space key={i} style={{ width: '100%' }}>
-                <Input value={find} placeholder={v.match === 'regex' ? '\\s+' : t('field_find')} onChange={(e) => set({ pairs: v.pairs.map((p: string[], j: number) => (j === i ? [e.target.value, p[1]] : p)) })} aria-label={t('field_find')} />
-                <Text type="secondary">→</Text>
-                <Input value={rep} placeholder={t('field_replace_with')} onChange={(e) => set({ pairs: v.pairs.map((p: string[], j: number) => (j === i ? [p[0], e.target.value] : p)) })} aria-label={t('field_replace_with')} />
-                <Button type="text" icon={<DeleteOutlined />} aria-label={t('remove_pair')} disabled={v.pairs.length === 1} onClick={() => set({ pairs: v.pairs.filter((_: unknown, j: number) => j !== i) })} />
-              </Space>
+            {choice('match', t('field_find'), [
+              { value: 'contains', label: t('match_contains') },
+              { value: 'whole', label: t('match_whole') },
+              { value: 'regex', label: t('match_regex') },
+            ])}
+            {pairRows('pairs', ([find = '', rep = ''], _i, setPair) => (
+              <>
+                <Input
+                  value={find}
+                  placeholder={v.match === 'regex' ? '\\s+' : t('field_find')}
+                  aria-label={t('field_find')}
+                  onChange={(e) => setPair([e.target.value, rep])}
+                />
+                <span className="text-muted-foreground">→</span>
+                <Input
+                  value={rep}
+                  placeholder={t('field_replace_with')}
+                  aria-label={t('field_replace_with')}
+                  onChange={(e) => setPair([find, e.target.value])}
+                />
+              </>
             ))}
-            <Button size="small" icon={<PlusOutlined />} onClick={() => set({ pairs: [...v.pairs, ['', '']] })}>{t('add_pair')}</Button>
-            <Checkbox checked={v.caseSensitive} onChange={(e) => set({ caseSensitive: e.target.checked })}>{t('match_case')}</Checkbox>
-          </Space>
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start"
+              onClick={() => set({ pairs: [...v.pairs, ['', '']] })}
+            >
+              <Plus /> {t('add_pair')}
+            </Button>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={Boolean(v.caseSensitive)}
+                onCheckedChange={(c) => set({ caseSensitive: c === true })}
+              />
+              {t('match_case')}
+            </label>
+          </>
         );
       case 'fill':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_columns'))}
-            <Radio.Group value={v.strategy} onChange={(e) => set({ strategy: e.target.value })}>
-              {['value', 'down', 'up', 'mean', 'median', 'mode'].map((s) => (
-                <Radio.Button key={s} value={s}>{t(`fill_${s}`)}</Radio.Button>
-              ))}
-            </Radio.Group>
-            {v.strategy === 'value' ? text('value', t('field_fill_value'), '0', t('field_fill_value_hint')) : null}
-          </Space>
+            {choice(
+              'strategy',
+              t('action_fill'),
+              ['value', 'down', 'up', 'mean', 'median', 'mode'].map((s) => ({ value: s, label: t(`fill_${s}`) }))
+            )}
+            {v.strategy === 'value' && text('value', t('field_fill_value'), '0', t('field_fill_value_hint'))}
+          </>
         );
       case 'split':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {single('column', t('field_column'))}
-            <Radio.Group value={v.mode} onChange={(e) => set({ mode: e.target.value })}>
-              <Radio.Button value="whitespace">{t('split_whitespace')}</Radio.Button>
-              <Radio.Button value="delimiter">{t('split_delimiter')}</Radio.Button>
-              <Radio.Button value="positions">{t('split_positions')}</Radio.Button>
-              <Radio.Button value="rows">{t('split_rows')}</Radio.Button>
-            </Radio.Group>
-            {v.mode === 'delimiter' || v.mode === 'rows' ? (
-              <Space wrap>
+            {choice('mode', t('action_split'), [
+              { value: 'whitespace', label: t('split_whitespace') },
+              { value: 'delimiter', label: t('split_delimiter') },
+              { value: 'positions', label: t('split_positions') },
+              { value: 'rows', label: t('split_rows') },
+            ])}
+            {(v.mode === 'delimiter' || v.mode === 'rows') && (
+              <div className="flex flex-wrap items-center gap-1">
                 {[',', ';', '-', '/', '|', ' '].map((d) => (
-                  <Tag.CheckableTag key={d} checked={v.delimiter === d} onChange={() => set({ delimiter: d })}>
+                  <Chip key={d} checked={v.delimiter === d} onClick={() => set({ delimiter: d })}>
                     {d === ' ' ? t('delimiter_space') : d}
-                  </Tag.CheckableTag>
+                  </Chip>
                 ))}
-                <Input size="small" style={{ width: 120 }} value={v.delimiter} onChange={(e) => set({ delimiter: e.target.value })} aria-label={t('field_delimiter')} placeholder={t('delimiter_custom')} />
-              </Space>
-            ) : null}
-            {v.mode === 'positions' ? text('positions', t('field_positions'), '3, 7', t('field_positions_hint')) : null}
-            {v.mode !== 'rows' ? (
+                <Input
+                  className="h-7 w-28"
+                  value={v.delimiter}
+                  onChange={(e) => set({ delimiter: e.target.value })}
+                  aria-label={t('field_delimiter')}
+                  placeholder={t('delimiter_custom')}
+                />
+              </div>
+            )}
+            {v.mode === 'positions' && text('positions', t('field_positions'), '3, 7', t('field_positions_hint'))}
+            {v.mode !== 'rows' && (
               <>
-                {v.mode !== 'positions' ? (
-                  <Space>
-                    <Text strong>{t('field_parts')}</Text>
-                    <InputNumber min={2} max={20} value={v.parts} onChange={(n) => set({ parts: n ?? 2 })} aria-label={t('field_parts')} />
-                  </Space>
-                ) : null}
+                {v.mode !== 'positions' && (
+                  <NumberField
+                    label={t('field_parts')}
+                    min={2}
+                    max={20}
+                    value={v.parts}
+                    onChange={(n) => set({ parts: n || 2 })}
+                  />
+                )}
                 {text('into', t('field_new_columns'), 'first_name, last_name', t('split_names_hint'))}
-                <Checkbox checked={v.keep} onChange={(e) => set({ keep: e.target.checked })}>{t('keep_original')}</Checkbox>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={Boolean(v.keep)} onCheckedChange={(c) => set({ keep: c === true })} />
+                  {t('keep_original')}
+                </label>
               </>
-            ) : null}
-          </Space>
+            )}
+          </>
         );
       case 'extract':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {single('column', t('field_column'))}
-            <Space wrap>
+            <div className="flex flex-wrap gap-1">
               {EXTRACT_PRESETS.map((p) => (
-                <Tag.CheckableTag key={p.key} checked={v.pattern === p.pattern} onChange={() => set({ pattern: p.pattern, group: p.group })}>
+                <Chip
+                  key={p.key}
+                  checked={v.pattern === p.pattern}
+                  onClick={() => set({ pattern: p.pattern, group: p.group })}
+                >
                   {t(`extract_${p.key}`)}
-                </Tag.CheckableTag>
+                </Chip>
               ))}
-            </Space>
+            </div>
             {text('pattern', t('field_pattern'), '(\\d+)', t('field_pattern_hint'))}
             {text('into', t('field_new_column'))}
-          </Space>
+          </>
         );
       case 'mask':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_columns'))}
-            <Radio.Group value={v.method} onChange={(e) => set({ method: e.target.value })}>
-              {(['hash', 'last4', 'redact'] as const).map((m) => (
-                <Radio key={m} value={m}>{t(`mask_${m}`)}</Radio>
-              ))}
-            </Radio.Group>
-          </Space>
+            {choice(
+              'method',
+              t('action_mask'),
+              (['hash', 'last4', 'redact'] as const).map((m) => ({ value: m, label: t(`mask_${m}`) }))
+            )}
+          </>
         );
       case 'change_case':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_columns'))}
-            <Radio.Group value={v.case} onChange={(e) => set({ case: e.target.value })}>
-              <Radio.Button value="upper">UPPER</Radio.Button>
-              <Radio.Button value="lower">lower</Radio.Button>
-              <Radio.Button value="title">Title Case</Radio.Button>
-              <Radio.Button value="sentence">Sentence case</Radio.Button>
-            </Radio.Group>
-          </Space>
+            {choice('case', t('action_case'), [
+              { value: 'upper', label: 'UPPER' },
+              { value: 'lower', label: 'lower' },
+              { value: 'title', label: 'Title Case' },
+              { value: 'sentence', label: 'Sentence case' },
+            ])}
+          </>
         );
       case 'filter_rows':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Radio.Group value={v.action} onChange={(e) => set({ action: e.target.value })}>
-              <Radio.Button value="keep">{t('filter_keep')}</Radio.Button>
-              <Radio.Button value="remove">{t('filter_remove')}</Radio.Button>
-            </Radio.Group>
-            <ConditionBuilder columns={columns} value={v.conditions} onChange={(c) => set({ conditions: c })} match={v.match} onMatchChange={(m) => set({ match: m })} />
-          </Space>
+          <>
+            {choice('action', t('action_filter'), [
+              { value: 'keep', label: t('filter_keep') },
+              { value: 'remove', label: t('filter_remove') },
+            ])}
+            <ConditionBuilder
+              columns={columns}
+              value={v.conditions}
+              onChange={(c) => set({ conditions: c })}
+              match={v.match}
+              onMatchChange={(m) => set({ match: m })}
+            />
+          </>
         );
-      case 'conditional':
+      case 'conditional': {
+        type Rule = { conditions: Condition[]; match: 'all' | 'any'; then: { value?: string } };
+        const rules = v.rules as Rule[];
+        const setRule = (i: number, patch: Partial<Rule>) =>
+          set({ rules: rules.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            {text('into', t('field_new_column'), 'category', columns.includes(v.into) ? t('replaces_column') : undefined)}
-            {(v.rules as { conditions: Condition[]; match: 'all' | 'any'; then: { value?: string; column?: string } }[]).map((rule, i) => (
-              <div key={i} className="recipe-editor__rule">
-                <Text strong>{i === 0 ? t('rule_if') : t('rule_else_if')}</Text>
+          <>
+            {text(
+              'into',
+              t('field_new_column'),
+              'category',
+              columns.includes(v.into) ? t('replaces_column') : undefined
+            )}
+            {rules.map((rule, i) => (
+              <div key={i} className="flex flex-col gap-2 rounded-lg border p-3">
+                <p className="text-sm font-medium">{i === 0 ? t('rule_if') : t('rule_else_if')}</p>
                 <ConditionBuilder
                   columns={columns}
                   value={rule.conditions}
                   match={rule.match}
-                  onMatchChange={(m) => set({ rules: v.rules.map((r: object, j: number) => (j === i ? { ...r, match: m } : r)) })}
-                  onChange={(c) => set({ rules: v.rules.map((r: object, j: number) => (j === i ? { ...r, conditions: c } : r)) })}
+                  onMatchChange={(m) => setRule(i, { match: m })}
+                  onChange={(c) => setRule(i, { conditions: c })}
                 />
-                <Space style={{ marginTop: 6 }}>
-                  <Text strong>{t('rule_then')}</Text>
-                  <Input size="small" value={rule.then?.value ?? ''} placeholder={t('placeholder_value')} onChange={(e) => set({ rules: v.rules.map((r: object, j: number) => (j === i ? { ...r, then: { value: e.target.value } } : r)) })} aria-label={t('rule_then')} />
-                  <Button size="small" type="text" icon={<DeleteOutlined />} aria-label={t('remove_rule')} disabled={v.rules.length === 1} onClick={() => set({ rules: v.rules.filter((_: unknown, j: number) => j !== i) })} />
-                </Space>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{t('rule_then')}</span>
+                  <Input
+                    className="h-8"
+                    value={rule.then?.value ?? ''}
+                    placeholder={t('placeholder_value')}
+                    aria-label={t('rule_then')}
+                    onChange={(e) => setRule(i, { then: { value: e.target.value } })}
+                  />
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={t('remove_rule')}
+                    disabled={rules.length === 1}
+                    onClick={() => set({ rules: rules.filter((_, j) => j !== i) })}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
               </div>
             ))}
-            <Button size="small" icon={<PlusOutlined />} onClick={() => set({ rules: [...v.rules, { conditions: [{ column: columns[0], op: 'equals', value: '' }], match: 'all', then: { value: '' } }] })}>
-              {t('add_rule')}
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start"
+              onClick={() =>
+                set({
+                  rules: [
+                    ...rules,
+                    {
+                      conditions: [{ column: columns[0] ?? '', op: 'equals', value: '' }],
+                      match: 'all',
+                      then: { value: '' },
+                    },
+                  ],
+                })
+              }
+            >
+              <Plus /> {t('add_rule')}
             </Button>
-            <Space>
-              <Text strong>{t('rule_otherwise')}</Text>
-              <Input size="small" value={v.otherwise?.value ?? ''} placeholder={t('placeholder_otherwise')} onChange={(e) => set({ otherwise: { value: e.target.value } })} aria-label={t('rule_otherwise')} />
-            </Space>
-          </Space>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">{t('rule_otherwise')}</span>
+              <Input
+                className="h-8"
+                value={v.otherwise?.value ?? ''}
+                placeholder={t('placeholder_otherwise')}
+                aria-label={t('rule_otherwise')}
+                onChange={(e) => set({ otherwise: { value: e.target.value } })}
+              />
+            </div>
+          </>
         );
+      }
       case 'formula':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            {text('into', t('field_new_column'), 'new_column', columns.includes(v.into) ? t('replaces_column') : undefined)}
-            <FormulaEditor value={v.expression} language={v.language} onChange={(e) => set({ expression: e })} onLanguageChange={(l) => set({ language: l })} columns={columns} onValidity={setFormulaOk} />
-          </Space>
+          <>
+            {text(
+              'into',
+              t('field_new_column'),
+              'new_column',
+              columns.includes(v.into) ? t('replaces_column') : undefined
+            )}
+            <FormulaEditor
+              value={v.expression}
+              language={v.language}
+              onChange={(e) => set({ expression: e })}
+              onLanguageChange={(l) => set({ language: l })}
+              columns={columns}
+              onValidity={setFormulaOk}
+            />
+          </>
         );
       case 'concat':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_columns_in_order'), 2)}
             {text('separator', t('field_separator'), ' ')}
             {text('into', t('field_new_column'))}
-          </Space>
+          </>
         );
       case 'sql':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Input.TextArea
+          <FormRow hint={t('sql_step_hint')}>
+            <Textarea
               value={v.query}
-              autoSize={{ minRows: 6, maxRows: 18 }}
-              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5 }}
+              rows={8}
+              className="font-mono text-xs"
               onChange={(e) => set({ query: e.target.value })}
               aria-label={t('form_sql')}
               spellCheck={false}
             />
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('sql_step_hint')}</Text>
-          </Space>
+          </FormRow>
         );
       case 'flatten_json':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {single('column', t('field_column'))}
             {text('fields', t('field_json_fields'), 'city, address.country', t('flatten_hint'))}
-          </Space>
+          </>
         );
       case 'dedupe':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_dedupe_columns'), 0)}
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('dedupe_hint')}</Text>
-          </Space>
+            <p className="text-xs text-muted-foreground">{t('dedupe_hint')}</p>
+          </>
         );
       case 'group':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('by', t('field_group_by'), 0)}
-            {(['sum', 'count', 'avg', 'min', 'max'] as const).map((m) => (
-              <React.Fragment key={m}>{multi(m, t(`agg_${m}`), 0)}</React.Fragment>
+            {AGGS.map((m) => (
+              <Fragment key={m}>{multi(m, t(`agg_${m}`), 0)}</Fragment>
             ))}
-          </Space>
+          </>
         );
       case 'checks':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('notNull', t('check_not_null'), 0)}
             {multi('unique', t('check_unique'), 0)}
-            <Space wrap>
-              <Select allowClear showSearch placeholder={t('check_allowed_column')} value={v.acceptedColumn} onChange={(val) => set({ acceptedColumn: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ minWidth: 180 }} aria-label={t('check_allowed_column')} />
-              <Input value={v.acceptedValues} onChange={(e) => set({ acceptedValues: e.target.value })} placeholder={t('placeholder_in_list')} style={{ width: 240 }} aria-label={t('check_allowed_values')} />
-            </Space>
-            <Space wrap>
-              <Select allowClear showSearch placeholder={t('check_range_column')} value={v.rangeColumn} onChange={(val) => set({ rangeColumn: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ minWidth: 180 }} aria-label={t('check_range_column')} />
-              <InputNumber value={v.rangeMin === '' ? null : v.rangeMin} onChange={(n) => set({ rangeMin: n ?? '' })} placeholder="0" aria-label={t('check_min')} />
-              <InputNumber value={v.rangeMax === '' ? null : v.rangeMax} onChange={(n) => set({ rangeMax: n ?? '' })} placeholder="100" aria-label={t('check_max')} />
-            </Space>
-            <Radio.Group value={v.onFail} onChange={(e) => set({ onFail: e.target.value })}>
-              <Radio value="quarantine">{t('check_set_aside')}</Radio>
-              <Radio value="warn">{t('check_warn')}</Radio>
-              <Radio value="fail">{t('check_fail')}</Radio>
-            </Radio.Group>
-          </Space>
+            <div className="grid grid-cols-2 gap-2">
+              <ColumnSelect
+                label={t('check_allowed_column')}
+                placeholder={t('check_allowed_column')}
+                allowEmpty
+                value={v.acceptedColumn}
+                options={columns}
+                onChange={(val) => set({ acceptedColumn: val })}
+              />
+              <Input
+                value={v.acceptedValues}
+                placeholder={t('placeholder_in_list')}
+                aria-label={t('check_allowed_values')}
+                onChange={(e) => set({ acceptedValues: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ColumnSelect
+                className="w-48"
+                label={t('check_range_column')}
+                placeholder={t('check_range_column')}
+                allowEmpty
+                value={v.rangeColumn}
+                options={columns}
+                onChange={(val) => set({ rangeColumn: val })}
+              />
+              <NumberField
+                label={t('check_min')}
+                placeholder="0"
+                value={v.rangeMin}
+                onChange={(n) => set({ rangeMin: n })}
+              />
+              <NumberField
+                label={t('check_max')}
+                placeholder="100"
+                value={v.rangeMax}
+                onChange={(n) => set({ rangeMax: n })}
+              />
+            </div>
+            {choice('onFail', t('check_set_aside'), [
+              { value: 'quarantine', label: t('check_set_aside') },
+              { value: 'warn', label: t('check_warn') },
+              { value: 'fail', label: t('check_fail') },
+            ])}
+          </>
         );
       case 'pivot':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {single('on', t('field_pivot_on'))}
             {single('using', t('field_pivot_values'))}
-            <Radio.Group value={v.agg} onChange={(e) => set({ agg: e.target.value })}>
-              {(['sum', 'count', 'avg', 'min', 'max'] as const).map((m) => (
-                <Radio.Button key={m} value={m}>{t(`agg_${m}`)}</Radio.Button>
-              ))}
-            </Radio.Group>
+            {choice(
+              'agg',
+              t('field_pivot_values'),
+              AGGS.map((m) => ({ value: m, label: t(`agg_${m}`) }))
+            )}
             {multi('groupBy', t('field_group_by'), 0)}
-          </Space>
+          </>
         );
       case 'merge':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-              <Text strong>{t('field_other_table')}</Text>
-              <Select showSearch value={v.asset} onChange={(val) => set({ asset: val })} options={tables.map((x) => ({ value: x, label: x }))} style={{ width: '100%' }} aria-label={t('field_other_table')} />
-            </Space>
-            <Radio.Group value={v.how} onChange={(e) => set({ how: e.target.value })}>
-              <Radio.Button value="left">{t('merge_left')}</Radio.Button>
-              <Radio.Button value="inner">{t('merge_inner')}</Radio.Button>
-              <Radio.Button value="full">{t('merge_full')}</Radio.Button>
-            </Radio.Group>
-            <Text strong>{t('merge_match')}</Text>
-            {(v.pairs as string[][]).map(([l, r], i) => (
-              <Space key={i}>
-                <Select showSearch value={l || undefined} placeholder={t('merge_this_column')} onChange={(val) => set({ pairs: v.pairs.map((p: string[], j: number) => (j === i ? [val, p[1]] : p)) })} options={columns.map((c) => ({ value: c, label: c }))} style={{ minWidth: 180 }} aria-label={t('merge_this_column')} />
-                <Text type="secondary">=</Text>
-                <Input value={r} placeholder={t('merge_other_column')} onChange={(e) => set({ pairs: v.pairs.map((p: string[], j: number) => (j === i ? [p[0], e.target.value] : p)) })} style={{ width: 180 }} aria-label={t('merge_other_column')} />
-                <Button type="text" icon={<DeleteOutlined />} aria-label={t('remove_pair')} disabled={v.pairs.length === 1} onClick={() => set({ pairs: v.pairs.filter((_: unknown, j: number) => j !== i) })} />
-              </Space>
+          <>
+            {single('asset', t('field_other_table'), { options: tables })}
+            {choice('how', t('action_merge'), [
+              { value: 'left', label: t('merge_left') },
+              { value: 'inner', label: t('merge_inner') },
+              { value: 'full', label: t('merge_full') },
+            ])}
+            <p className="text-sm font-medium">{t('merge_match')}</p>
+            {pairRows('pairs', ([l = '', r = ''], _i, setPair) => (
+              <>
+                <ColumnSelect
+                  label={t('merge_this_column')}
+                  placeholder={t('merge_this_column')}
+                  value={l || undefined}
+                  options={columns}
+                  onChange={(val) => setPair([val ?? '', r])}
+                />
+                <span className="text-muted-foreground">=</span>
+                <Input
+                  value={r}
+                  placeholder={t('merge_other_column')}
+                  aria-label={t('merge_other_column')}
+                  onChange={(e) => setPair([l, e.target.value])}
+                />
+              </>
             ))}
-            <Button size="small" icon={<PlusOutlined />} onClick={() => set({ pairs: [...v.pairs, ['', '']] })}>{t('add_pair')}</Button>
-            <Radio.Group value={v.match} onChange={(e) => set({ match: e.target.value })}>
-              <Radio value="exact">{t('merge_exact')}</Radio>
-              <Radio value="similar">{t('merge_similar')}</Radio>
-            </Radio.Group>
-            {v.match === 'similar' ? (
-              <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                <Space>
-                  <Text>{t('merge_similarity')}</Text>
-                  <InputNumber min={0.5} max={1} step={0.05} value={v.threshold} onChange={(val) => set({ threshold: val ?? 0.9 })} aria-label={t('merge_similarity')} />
-                </Space>
-                <Text type="secondary" style={{ fontSize: 12 }}>{t('merge_similar_hint')}</Text>
-              </Space>
-            ) : null}
-          </Space>
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start"
+              onClick={() => set({ pairs: [...v.pairs, ['', '']] })}
+            >
+              <Plus /> {t('add_pair')}
+            </Button>
+            {choice('match', t('merge_match'), [
+              { value: 'exact', label: t('merge_exact') },
+              { value: 'similar', label: t('merge_similar') },
+            ])}
+            {v.match === 'similar' && (
+              <FormRow hint={t('merge_similar_hint')}>
+                <NumberField
+                  label={t('merge_similarity')}
+                  min={0.5}
+                  max={1}
+                  step={0.05}
+                  value={v.threshold}
+                  onChange={(n) => set({ threshold: n === '' ? 0.9 : n })}
+                />
+              </FormRow>
+            )}
+          </>
         );
       case 'window':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-              <Text strong>{t('field_calculation')}</Text>
-              <Select value={v.calc} onChange={(val) => set({ calc: val })} options={WINDOW_CALCS.map((c) => ({ value: c, label: t(`calc_${c}`) }))} style={{ width: '100%' }} aria-label={t('field_calculation')} />
-            </Space>
-            {v.calc !== 'row_number' ? single('column', t('field_value_column')) : null}
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-              <Text strong>{t('field_order_by')}</Text>
-              <Space.Compact style={{ width: '100%' }}>
-                <Select showSearch allowClear value={v.orderBy} onChange={(val) => set({ orderBy: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ width: '100%' }} aria-label={t('field_order_by')} status={NEEDS_ORDER.has(v.calc) && !v.orderBy ? 'warning' : undefined} />
-                <Select value={v.descending ? 'desc' : 'asc'} onChange={(val) => set({ descending: val === 'desc' })} options={[{ value: 'asc', label: t('order_asc') }, { value: 'desc', label: t('order_desc') }]} style={{ width: 140 }} aria-label={t('field_direction')} />
-              </Space.Compact>
-            </Space>
+          <>
+            <FormRow label={t('field_calculation')}>
+              <NativeSelect
+                aria-label={t('field_calculation')}
+                className="w-full"
+                value={v.calc}
+                onChange={(e) => set({ calc: e.target.value })}
+              >
+                {WINDOW_CALCS.map((c) => (
+                  <NativeSelectOption key={c} value={c}>
+                    {t(`calc_${c}`)}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </FormRow>
+            {v.calc !== 'row_number' && single('column', t('field_value_column'))}
+            <FormRow label={t('field_order_by')}>
+              <div className="flex gap-2">
+                <ColumnSelect
+                  label={t('field_order_by')}
+                  allowEmpty
+                  warn={NEEDS_ORDER.has(v.calc) && !v.orderBy}
+                  value={v.orderBy}
+                  options={columns}
+                  onChange={(val) => set({ orderBy: val })}
+                />
+                <NativeSelect
+                  className="w-36"
+                  aria-label={t('field_direction')}
+                  value={v.descending ? 'desc' : 'asc'}
+                  onChange={(e) => set({ descending: e.target.value === 'desc' })}
+                >
+                  <NativeSelectOption value="asc">{t('order_asc')}</NativeSelectOption>
+                  <NativeSelectOption value="desc">{t('order_desc')}</NativeSelectOption>
+                </NativeSelect>
+              </div>
+            </FormRow>
             {multi('partitionBy', t('field_per_group'), 0)}
-            {v.calc === 'moving_average' ? (
-              <Space><Text>{t('field_window_rows')}</Text><InputNumber min={1} max={1000} value={v.size} onChange={(val) => set({ size: val ?? 3 })} aria-label={t('field_window_rows')} /></Space>
-            ) : null}
-            {v.calc === 'previous' || v.calc === 'next' ? (
-              <Space><Text>{t('field_rows_away')}</Text><InputNumber min={1} max={1000} value={v.offset} onChange={(val) => set({ offset: val ?? 1 })} aria-label={t('field_rows_away')} /></Space>
-            ) : null}
+            {v.calc === 'moving_average' && (
+              <NumberField
+                label={t('field_window_rows')}
+                min={1}
+                max={1000}
+                value={v.size}
+                onChange={(n) => set({ size: n || 3 })}
+              />
+            )}
+            {(v.calc === 'previous' || v.calc === 'next') && (
+              <NumberField
+                label={t('field_rows_away')}
+                min={1}
+                max={1000}
+                value={v.offset}
+                onChange={(n) => set({ offset: n || 1 })}
+              />
+            )}
             {text('into', t('field_new_column'), `${v.calc}_${v.column ?? 'value'}`)}
-          </Space>
+          </>
         );
       case 'bin':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {single('column', t('field_number_column'))}
-            <Radio.Group value={v.mode} onChange={(e) => set({ mode: e.target.value })}>
-              <Radio.Button value="edges">{t('bin_edges')}</Radio.Button>
-              <Radio.Button value="equal_width">{t('bin_equal_width')}</Radio.Button>
-              <Radio.Button value="quantiles">{t('bin_quantiles')}</Radio.Button>
-            </Radio.Group>
+            {choice('mode', t('action_bin'), [
+              { value: 'edges', label: t('bin_edges') },
+              { value: 'equal_width', label: t('bin_equal_width') },
+              { value: 'quantiles', label: t('bin_quantiles') },
+            ])}
             {v.mode === 'edges' ? (
               <>
                 {text('edges', t('field_boundaries'), '10000, 50000', t('bin_edges_hint'))}
                 {text('labels', t('field_range_labels'), t('bin_labels_placeholder'))}
               </>
             ) : (
-              <Space><Text>{t('field_range_count')}</Text><InputNumber min={2} max={100} value={v.count} onChange={(val) => set({ count: val ?? 4 })} aria-label={t('field_range_count')} /></Space>
+              <NumberField
+                label={t('field_range_count')}
+                min={2}
+                max={100}
+                value={v.count}
+                onChange={(n) => set({ count: n || 4 })}
+              />
             )}
             {text('into', t('field_new_column'))}
-          </Space>
+          </>
         );
       case 'index':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {text('into', t('field_new_column'))}
-            <Space><Text>{t('field_start_at')}</Text><InputNumber value={v.start} onChange={(val) => set({ start: val ?? 1 })} aria-label={t('field_start_at')} /></Space>
+            <NumberField
+              label={t('field_start_at')}
+              value={v.start}
+              onChange={(n) => set({ start: n === '' ? 1 : n })}
+            />
             {multi('partitionBy', t('field_restart_per_group'), 0)}
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-              <Text strong>{t('field_order_by')}</Text>
-              <Select showSearch allowClear value={v.orderBy} placeholder={t('index_keep_order')} onChange={(val) => set({ orderBy: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ width: '100%' }} aria-label={t('field_order_by')} />
-            </Space>
-          </Space>
+            <FormRow label={t('field_order_by')}>
+              <ColumnSelect
+                label={t('field_order_by')}
+                placeholder={t('index_keep_order')}
+                allowEmpty
+                value={v.orderBy}
+                options={columns}
+                onChange={(val) => set({ orderBy: val })}
+              />
+            </FormRow>
+          </>
         );
       case 'top_n':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space>
-              <Radio.Group value={v.descending ? 'top' : 'bottom'} onChange={(e) => set({ descending: e.target.value === 'top' })}>
-                <Radio.Button value="top">{t('topn_top')}</Radio.Button>
-                <Radio.Button value="bottom">{t('topn_bottom')}</Radio.Button>
-              </Radio.Group>
-              <InputNumber min={1} max={100000} value={v.n} onChange={(val) => set({ n: val ?? 1 })} aria-label={t('field_how_many')} />
-            </Space>
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <Segmented
+                label={t('action_top_n')}
+                value={v.descending ? 'top' : 'bottom'}
+                onChange={(val) => set({ descending: val === 'top' })}
+                options={[
+                  { value: 'top', label: t('topn_top') },
+                  { value: 'bottom', label: t('topn_bottom') },
+                ]}
+              />
+              <NumberField
+                label={t('field_how_many')}
+                min={1}
+                max={100000}
+                value={v.n}
+                onChange={(n) => set({ n: n || 1 })}
+              />
+            </div>
             {single('orderBy', t('field_by_column'))}
             {multi('partitionBy', t('field_per_group'), 0)}
-          </Space>
+          </>
         );
       case 'remove_rows':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space><Text>{t('field_remove_top')}</Text><InputNumber min={0} max={1000000} value={v.top} onChange={(val) => set({ top: val ?? 0 })} aria-label={t('field_remove_top')} /></Space>
-            <Space><Text>{t('field_remove_bottom')}</Text><InputNumber min={0} max={1000000} value={v.bottom} onChange={(val) => set({ bottom: val ?? 0 })} aria-label={t('field_remove_bottom')} /></Space>
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('remove_rows_hint')}</Text>
-          </Space>
+          <>
+            <NumberField
+              label={t('field_remove_top')}
+              min={0}
+              max={1000000}
+              value={v.top}
+              onChange={(n) => set({ top: n || 0 })}
+            />
+            <NumberField
+              label={t('field_remove_bottom')}
+              min={0}
+              max={1000000}
+              value={v.bottom}
+              onChange={(n) => set({ bottom: n || 0 })}
+            />
+            <p className="text-xs text-muted-foreground">{t('remove_rows_hint')}</p>
+          </>
         );
       case 'header_rows': {
-        const names = v.names ?? headerNames(before.slice(Number(v.skip) || 0, (Number(v.skip) || 0) + (Number(v.rows) || 1)), columns, v.joiner ?? ' ');
+        const names: Record<string, string> =
+          v.names ??
+          headerNames(
+            before.slice(Number(v.skip) || 0, (Number(v.skip) || 0) + (Number(v.rows) || 1)),
+            columns,
+            v.joiner ?? ' '
+          );
         const regen = (patch: Values) => {
           const next = { ...v, ...patch };
           const skip = Number(next.skip) || 0;
-          set({ ...patch, names: headerNames(before.slice(skip, skip + (Number(next.rows) || 1)), columns, next.joiner ?? ' ') });
+          set({
+            ...patch,
+            names: headerNames(before.slice(skip, skip + (Number(next.rows) || 1)), columns, next.joiner ?? ' '),
+          });
         };
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space wrap>
-              <Text>{t('field_rows_above')}</Text>
-              <InputNumber min={0} max={100} value={v.skip} onChange={(val) => regen({ skip: val ?? 0 })} aria-label={t('field_rows_above')} />
-              <Text>{t('field_header_rows')}</Text>
-              <InputNumber min={1} max={10} value={v.rows} onChange={(val) => regen({ rows: val ?? 1 })} aria-label={t('field_header_rows')} />
-              {Number(v.rows) > 1 ? (
-                <>
-                  <Text>{t('field_joined_with')}</Text>
-                  <Input value={v.joiner} onChange={(e) => regen({ joiner: e.target.value })} style={{ width: 70 }} aria-label={t('field_joined_with')} />
-                </>
-              ) : null}
-            </Space>
-            <Table
-              size="small"
-              pagination={false}
-              rowKey="from"
-              scroll={{ y: 240 }}
-              dataSource={Object.entries(names).map(([from, to]) => ({ from, to }))}
-              columns={[
-                { title: t('col_before'), dataIndex: 'from' },
-                {
-                  title: t('col_after'),
-                  dataIndex: 'to',
-                  render: (to: string, row: { from: string }) => (
-                    <Input size="small" value={to} onChange={(e) => set({ names: { ...names, [row.from]: e.target.value } })} aria-label={row.from} />
-                  ),
-                },
-              ]}
-            />
-          </Space>
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <NumberField
+                label={t('field_rows_above')}
+                min={0}
+                max={100}
+                value={v.skip}
+                onChange={(n) => regen({ skip: n || 0 })}
+              />
+              <NumberField
+                label={t('field_header_rows')}
+                min={1}
+                max={10}
+                value={v.rows}
+                onChange={(n) => regen({ rows: n || 1 })}
+              />
+              {Number(v.rows) > 1 && (
+                <label className="flex items-center gap-2 text-sm">
+                  {t('field_joined_with')}
+                  <Input className="h-8 w-16" value={v.joiner} onChange={(e) => regen({ joiner: e.target.value })} />
+                </label>
+              )}
+            </div>
+            <NameTable names={names} onChange={(from, to) => set({ names: { ...names, [from]: to } })} />
+          </>
         );
       }
       case 'split_rows':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Radio.Group value={v.format === 'json' ? 'json' : 'text'} onChange={(e) => set({ format: e.target.value })}>
-              <Radio.Button value="text">{t('rows_from_text')}</Radio.Button>
-              <Radio.Button value="json">{t('rows_from_json')}</Radio.Button>
-            </Radio.Group>
-            {v.format !== 'json' ? text('delimiter', t('field_delimiter'), ',') : null}
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('split_rows_hint')}</Text>
-          </Space>
+          <>
+            <Segmented
+              label={t('action_split_rows')}
+              value={v.format === 'json' ? 'json' : 'text'}
+              onChange={(val) => set({ format: val })}
+              options={[
+                { value: 'text', label: t('rows_from_text') },
+                { value: 'json', label: t('rows_from_json') },
+              ]}
+            />
+            {v.format !== 'json' && text('delimiter', t('field_delimiter'), ',')}
+            <p className="text-xs text-muted-foreground">{t('split_rows_hint')}</p>
+          </>
         );
       case 'expand_rows':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_list_columns'))}
-            <Radio.Group value={v.format} onChange={(e) => set({ format: e.target.value })}>
-              <Radio.Button value="json">{t('rows_from_json')}</Radio.Button>
-              <Radio.Button value="text">{t('rows_from_text')}</Radio.Button>
-            </Radio.Group>
-            {v.format === 'text' ? text('delimiter', t('field_delimiter'), ',') : null}
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('expand_rows_hint')}</Text>
-          </Space>
+            {choice('format', t('action_expand_rows'), [
+              { value: 'json', label: t('rows_from_json') },
+              { value: 'text', label: t('rows_from_text') },
+            ])}
+            {v.format === 'text' && text('delimiter', t('field_delimiter'), ',')}
+            <p className="text-xs text-muted-foreground">{t('expand_rows_hint')}</p>
+          </>
         );
       case 'append':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-              <Text strong>{t('field_other_table')}</Text>
-              <Select showSearch value={v.asset} onChange={(val) => set({ asset: val })} options={tables.map((x) => ({ value: x, label: x }))} style={{ width: '100%' }} aria-label={t('field_other_table')} />
-            </Space>
-            <Checkbox checked={v.all} onChange={(e) => set({ all: e.target.checked })}>{t('append_keep_duplicates')}</Checkbox>
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('append_hint')}</Text>
-          </Space>
+          <>
+            {single('asset', t('field_other_table'), { options: tables })}
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={Boolean(v.all)} onCheckedChange={(c) => set({ all: c === true })} />
+              {t('append_keep_duplicates')}
+            </label>
+            <p className="text-xs text-muted-foreground">{t('append_hint')}</p>
+          </>
         );
       case 'predict':
       case 'ai_answer': {
         const isPredict = kind === 'predict';
         const field = isPredict ? 'model_id' : 'decision_id';
+        const label = isPredict ? t('field_model') : t('field_decision');
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-              <Text strong>{isPredict ? t('field_model') : t('field_decision')}</Text>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                loading={aiChoices === null}
-                value={v[field]}
-                onChange={(val) => set({ [field]: val })}
-                options={(aiChoices ?? []).map((c) => ({ value: c.value, label: c.ready ? c.label : `${c.label} · ${t('predict_not_approved')}`, disabled: !c.ready }))}
-                notFoundContent={aiChoices === null ? undefined : (
-                  <Text type="secondary">{isPredict ? t('predict_none') : t('ai_answer_none')}</Text>
-                )}
-                style={{ width: '100%' }}
-                aria-label={isPredict ? t('field_model') : t('field_decision')}
-              />
-            </Space>
+          <>
+            <FormRow label={label}>
+              <NativeSelect
+                aria-label={label}
+                className="w-full"
+                value={v[field] ?? ''}
+                onChange={(e) => set({ [field]: e.target.value })}
+              >
+                <NativeSelectOption value="">{aiChoices === null ? '…' : '—'}</NativeSelectOption>
+                {(aiChoices ?? []).map((c) => (
+                  <NativeSelectOption key={c.value} value={c.value} disabled={!c.ready}>
+                    {c.ready ? c.label : `${c.label} · ${t('predict_not_approved')}`}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+              {aiChoices !== null && !aiChoices.length ? (
+                <p className="text-xs text-muted-foreground">{isPredict ? t('predict_none') : t('ai_answer_none')}</p>
+              ) : null}
+            </FormRow>
             {isPredict ? null : multi('columns', t('field_ai_columns'))}
-            {text('into', t('field_output_column'), isPredict ? t('placeholder_predict_column') : t('placeholder_ai_column'))}
-            <Text type="secondary" style={{ fontSize: 12 }}>{isPredict ? t('predict_hint') : t('ai_answer_hint')}</Text>
-          </Space>
+            {text(
+              'into',
+              t('field_output_column'),
+              isPredict ? t('placeholder_predict_column') : t('placeholder_ai_column'),
+              isPredict ? t('predict_hint') : t('ai_answer_hint')
+            )}
+          </>
         );
       }
       case 'unpivot':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <>
             {multi('columns', t('field_unpivot_columns'))}
             {text('name', t('field_unpivot_name'), 'attribute')}
             {text('value', t('field_unpivot_value'), 'value')}
-          </Space>
+          </>
         );
     }
   })();
@@ -1040,76 +1082,105 @@ export function StepForm({
   // Before → after for the columns this step touches (or adds), on the first rows.
   const touched = step ? stepColumns(step) : [];
   const added = draft?.columns.map((c) => c.name).filter((c) => !columns.includes(c)) ?? [];
-  const shown = Array.from(new Set([...touched.filter((c) => draft?.columns.some((d) => d.name === c)), ...added])).slice(0, 4);
+  const shown = Array.from(
+    new Set([...touched.filter((c) => draft?.columns.some((d) => d.name === c)), ...added])
+  ).slice(0, 4);
   const last = draft?.step_stats?.[draft.step_stats.length - 1];
   // Row-by-row before/after only makes sense when the step keeps every row in place.
   const aligned = Boolean(draft) && !last?.rows_delta;
-  const previewRows = (draft?.rows ?? []).slice(0, 8).map((row, i) => ({ key: i, before: aligned ? before[i] : undefined, after: row }));
+  const previewRows = (draft?.rows ?? [])
+    .slice(0, 8)
+    .map((row, i) => ({ before: aligned ? before[i] : undefined, after: row }));
+  const wide = kind === 'formula' || kind === 'conditional' || kind === 'rename_all';
 
   return (
-    <Modal
-      open={open}
-      width={kind === 'formula' || kind === 'conditional' || kind === 'rename_all' ? 820 : 640}
-      title={t(`form_${kind}`, { column: selected[0] ?? '' })}
-      okText={existing ? t('save_step') : t('add_step')}
-      okButtonProps={{ disabled: !step || Boolean(draftError) }}
-      onOk={() => step && onSubmit(existing ? withMeta(step, existing) : step)}
-      onCancel={onCancel}
-      destroyOnHidden
-    >
-      <Space direction="vertical" size={14} style={{ width: '100%' }}>
-        {body}
-        <div className="recipe-editor__draft">
-          <Text strong>{t('draft_preview')}</Text>
-          {draftError ? <Alert type="error" showIcon message={draftError} /> : null}
-          {last && !draftError ? (
-            <Space wrap size={4}>
-              {last.rows_delta ? <Tag color="orange">{t('stat_rows', { delta: last.rows_delta })}</Tag> : null}
-              {last.added?.length ? <Tag color="green">{t('stat_added', { count: last.added.length })}</Tag> : null}
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className={cn('max-h-[90vh] overflow-y-auto', wide ? 'sm:max-w-3xl' : 'sm:max-w-xl')}>
+        <DialogHeader>
+          <DialogTitle>{t(`form_${kind}`, { column: selected[0] ?? '' })}</DialogTitle>
+          <DialogDescription className="sr-only">{t('draft_fill_form')}</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">{body}</div>
+        <section aria-label={t('draft_preview')} className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3">
+          <p className="text-sm font-medium">{t('draft_preview')}</p>
+          {draftError && (
+            <p role="alert" className="text-sm text-destructive">
+              {draftError}
+            </p>
+          )}
+          {last && !draftError && (
+            <div className="flex flex-wrap gap-1">
+              {last.rows_delta ? <Tag tone="warn">{t('stat_rows', { delta: last.rows_delta })}</Tag> : null}
+              {last.added?.length ? <Tag tone="good">{t('stat_added', { count: last.added.length })}</Tag> : null}
               {last.removed?.length ? <Tag>{t('stat_removed', { count: last.removed.length })}</Tag> : null}
               {Object.entries(last.emptied ?? {}).map(([c, n]) => (
-                <Tag key={c} color="red">{t('stat_emptied', { count: n, column: c })}</Tag>
+                <Tag key={c} tone="bad">
+                  {t('stat_emptied', { count: n, column: c })}
+                </Tag>
               ))}
-              {!last.rows_delta && !last.added?.length && !last.removed?.length && !Object.keys(last.emptied ?? {}).length ? (
-                <Tag color="green">{t('stat_clean')}</Tag>
+              {!last.rows_delta &&
+              !last.added?.length &&
+              !last.removed?.length &&
+              !Object.keys(last.emptied ?? {}).length ? (
+                <Tag tone="good">{t('stat_clean')}</Tag>
               ) : null}
-            </Space>
-          ) : null}
+            </div>
+          )}
           {draft && shown.length ? (
-            <Table
-              size="small"
-              pagination={false}
-              dataSource={previewRows}
-              scroll={{ x: 'max-content' }}
-              columns={shown.map((c) => ({
-                title: c,
-                key: c,
-                render: (_: unknown, r: { before?: Record<string, unknown>; after: Record<string, unknown> }) => {
-                  const b = r.before?.[c];
-                  const a = r.after[c];
-                  const changed = String(b ?? '') !== String(a ?? '');
-                  return (
-                    <span className={changed ? 'recipe-editor__cell--changed' : undefined}>
-                      {changed && b !== undefined ? <Text delete type="secondary">{String(b ?? '')}</Text> : null}
-                      {changed && b !== undefined ? ' → ' : null}
-                      {a === null || a === undefined ? <Text type="secondary" italic>{t('empty_cell')}</Text> : String(a)}
-                    </span>
-                  );
-                },
-              }))}
-            />
+            <div className="overflow-x-auto rounded border bg-card">
+              <table className="w-full text-xs">
+                <thead className="bg-muted text-left">
+                  <tr>
+                    {shown.map((c) => (
+                      <th key={c} className="px-2 py-1 font-medium">
+                        {c}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewRows.map((r, i) => (
+                    <tr key={i} className="border-t">
+                      {shown.map((c) => {
+                        const b = r.before?.[c];
+                        const a = r.after[c];
+                        const changed = String(b ?? '') !== String(a ?? '');
+                        return (
+                          <td key={c} className={cn('px-2 py-1 whitespace-nowrap', changed && 'bg-primary/10')}>
+                            {changed && b !== undefined && (
+                              <>
+                                <del className="text-muted-foreground">{String(b ?? '')}</del> →{' '}
+                              </>
+                            )}
+                            {a === null || a === undefined ? (
+                              <em className="text-muted-foreground">{t('empty_cell')}</em>
+                            ) : (
+                              String(typeof a === 'object' ? JSON.stringify(a) : a)
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : !draft && !draftError ? (
-            <Text type="secondary">{step ? t('loading_preview') : t('draft_fill_form')}</Text>
+            <p className="text-sm text-muted-foreground">{step ? t('loading_preview') : t('draft_fill_form')}</p>
           ) : null}
-        </div>
-      </Space>
-    </Modal>
+        </section>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            {t('cancel')}
+          </Button>
+          <Button
+            disabled={!step || !ready || Boolean(draftError)}
+            onClick={() => step && onSubmit(existing ? withMeta(step, existing) : step)}
+          >
+            {existing ? t('save_step') : t('add_step')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
-}
-
-/** Keep a step's label and on/off state when its settings are edited. */
-function withMeta(next: PrepStep, existing: PrepStep): PrepStep {
-  const [, old] = stepParts(existing);
-  const [kind, args] = stepParts(next);
-  return { [kind]: { ...args, ...(old.note ? { note: old.note } : {}), ...(old.disabled ? { disabled: true } : {}) } };
 }

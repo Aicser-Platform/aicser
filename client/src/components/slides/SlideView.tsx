@@ -6,6 +6,8 @@ import {
   type SlideElement,
   type Theme,
 } from '@/lib/slides/model';
+import { SlideFooterLayer } from '@/components/slides/SlideFooterLayer';
+import type { FooterContent } from '@/lib/slides/footer';
 import { textBoxStyle } from '@/lib/slides/textStyle';
 
 // Drawing a slide (thumbnails, the editor canvas, presenting). Everything is laid out on the 960 × 540 canvas and
@@ -132,7 +134,16 @@ export function SlideView({
   scale,
   hints = false,
   className,
-}: Readonly<{ slide: Slide; theme: Theme; scale: number; hints?: boolean; className?: string }>) {
+  footer = null,
+}: Readonly<{
+  slide: Slide;
+  theme: Theme;
+  scale: number;
+  hints?: boolean;
+  className?: string;
+  /** The date / footer / slide number row (lib/slides/footer `slideFooter`). */
+  footer?: FooterContent | null;
+}>) {
   return (
     <div
       className={className}
@@ -147,6 +158,7 @@ export function SlideView({
           background: slide.background ?? theme.background,
         }}
       >
+        {footer && <SlideFooterLayer content={footer} theme={theme} />}
         {slide.elements.map((el) => (
           <ElementView key={el.id} el={el} theme={theme} hints={hints} />
         ))}

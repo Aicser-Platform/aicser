@@ -29,12 +29,20 @@
   --ui-accent: 223 228 236;
   --ui-accent-foreground: 36 41 47;
   --ui-destructive: 231 0 11;
-  --ui-border: 122 127 133;
-  --ui-input: 122 127 133;
+  /* Lines around cards, tables and dividers stay light; field edges keep 3:1 against white (WCAG 1.4.11). Same
+     split as the AntD theme (ThemeProvider LIGHT.edge / LIGHT.control), so both kinds of screen match. */
+  --ui-border: 208 215 222;
+  --ui-input: 140 149 159;
   --ui-ring: 5 137 144;
   --ui-file-doc: 37 99 235;
   --ui-file-sheet: 21 128 61;
   --ui-file-slides: 194 65 12;
+  --ui-sidebar: 240 242 245;
+  --ui-sidebar-foreground: 36 41 47;
+  --ui-sidebar-accent: 223 228 236;
+  --ui-sidebar-accent-foreground: 36 41 47;
+  --ui-sidebar-border: 122 127 133;
+  --ui-sidebar-ring: 5 137 144;
 }
 
 html.dark,
@@ -58,6 +66,12 @@ html[data-theme='dark'] {
   --ui-file-doc: 96 165 250;
   --ui-file-sheet: 74 222 128;
   --ui-file-slides: 251 146 60;
+  --ui-sidebar: 3 7 18;
+  --ui-sidebar-foreground: 230 237 243;
+  --ui-sidebar-accent: 28 36 50;
+  --ui-sidebar-accent-foreground: 230 237 243;
+  --ui-sidebar-border: 103 113 125;
+  --ui-sidebar-ring: 0 194 203;
 }
 
 /* Base rules the desktop sets in @layer base, inside the scope only. */

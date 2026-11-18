@@ -1,5 +1,5 @@
 import React from 'react';
-import { Skeleton } from 'antd';
+import { Skeleton } from '@/components/aicser-ui/skeleton';
 import { useTranslations } from 'next-intl';
 import type { FeedItem } from '@/services/socialFeedService';
 import {
@@ -72,7 +72,7 @@ const FeedCardMedia: React.FC<FeedCardMediaProps> = ({
       {!skipThumbnail && (
         <div className={`${thumbnailWrapperClassName} ${fillHeight ? 'min-h-0 flex-1' : ''}`.trim()}>
           <div
-            className={`relative w-full overflow-hidden bg-[var(--ant-color-bg-container)] ${
+            className={`relative w-full overflow-hidden rounded-lg border bg-background ${
               fillHeight || liveVisualPreview || videoUrl ? 'h-full min-h-[160px]' : 'aspect-video'
             } ${previewClickable ? 'cursor-pointer' : ''}`}
             role={previewClickable ? 'button' : undefined}
@@ -90,32 +90,34 @@ const FeedCardMedia: React.FC<FeedCardMediaProps> = ({
                 muted
                 playsInline
                 preload="metadata"
-                className="absolute inset-0 h-full w-full object-contain bg-[var(--ant-color-bg-container)]"
+                className="absolute inset-0 h-full w-full bg-background object-contain"
               />
             ) : useStillImage ? (
               <img
                 src={thumbnailUrl}
                 alt={item.title}
                 loading="lazy"
-                className="absolute inset-0 h-full w-full object-contain bg-[var(--ant-color-bg-container)]"
+                className="absolute inset-0 h-full w-full bg-background object-contain"
               />
             ) : (
               <div
                 ref={lazyRef}
                 className={
-                  fillHeight || liveVisualPreview ? 'relative h-full min-h-[160px] w-full' : 'absolute inset-0 h-full w-full'
+                  fillHeight || liveVisualPreview
+                    ? 'relative h-full min-h-[160px] w-full'
+                    : 'absolute inset-0 h-full w-full'
                 }
               >
                 {lazyVisible ? (
                   <FeedPreviewVisual item={item} maxPreviews={maxPreviews} />
                 ) : (
-                  <Skeleton.Node active style={{ width: '100%', height: liveVisualPreview ? 180 : '100%' }} />
+                  <Skeleton className="w-full rounded-none" style={{ height: liveVisualPreview ? 180 : '100%' }} />
                 )}
               </div>
             )}
             {assetTypeLabel ? (
               <div className="absolute right-2 top-2 z-10">
-                <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">
+                <span className="rounded-full bg-popover px-2 py-0.5 text-[10px] font-semibold text-muted-foreground shadow-sm ring-1 ring-foreground/10">
                   {assetTypeLabel}
                 </span>
               </div>
@@ -128,15 +130,12 @@ const FeedCardMedia: React.FC<FeedCardMediaProps> = ({
       {tags.length > 0 && (
         <div className={`flex flex-wrap items-center gap-1.5 ${tagsWrapperClassName}`}>
           {tags.slice(0, maxTags).map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full bg-[var(--ant-color-fill-tertiary)] px-2.5 py-0.5 text-xs text-[var(--ant-color-text-secondary)]"
-            >
+            <span key={tag} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground">
               {tag}
             </span>
           ))}
           {tags.length > maxTags && (
-            <span className="rounded-full bg-[var(--ant-color-fill-tertiary)] px-2.5 py-0.5 text-xs text-[var(--ant-color-text-tertiary)]">
+            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs text-muted-foreground">
               +{tags.length - maxTags}
             </span>
           )}

@@ -11,8 +11,10 @@ import {
   type Node,
   type Edge,
   type ReactFlowInstance,
+  MiniMap,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import '@/styles/flow.css';
 import dagre from 'dagre';
 import { useTranslations } from 'next-intl';
 import { Button, Empty, Input, Segmented, Tooltip, Typography } from 'antd';
@@ -28,18 +30,14 @@ import './ERDCanvas.css';
 const NODE_TYPES = { tableNode: TableNode };
 const EDGE_TYPES = { relationshipEdge: RelationshipEdge };
 
-const NODE_WIDTH = 310;
-// Mirrors the fixed chrome in ERDCanvas.css: 40px header + ~20px column-count
-// subtitle + 10px body padding, plus 30px per row up to the body's own
-// max-height:280px scroll cap. Real ERD tools (dbdiagram.io, Power BI's
-// model view) size layout nodes off actual row count instead of a flat
-// guess — a table with 3 columns and one with 30 shouldn't claim the same
-// vertical slot, or dagre either overlaps the tall one or wastes space
-// around the short one.
-const HEADER_HEIGHT = 40;
-const SUBTITLE_HEIGHT = 20;
-const ROW_HEIGHT = 30;
-const BODY_PADDING = 10;
+// Mirrors the table card (TableNode, same as the semantic model diagram): 248px wide, a 44px header, 26px per
+// column, the column list scrolling past 280px. Layout sizes each node off its real row count, so dagre neither
+// overlaps a tall table nor wastes space around a short one.
+const NODE_WIDTH = 248;
+const HEADER_HEIGHT = 44;
+const SUBTITLE_HEIGHT = 0;
+const ROW_HEIGHT = 26;
+const BODY_PADDING = 2;
 const BODY_MAX_HEIGHT = 280;
 
 function estimateNodeHeight(columnCount: number): number {
@@ -519,13 +517,16 @@ export function ERDCanvas({
         edgeTypes={EDGE_TYPES}
         onInit={(instance) => { rfInstanceRef.current = instance; }}
         fitView
-        minZoom={0.3}
-        maxZoom={1}
+        minZoom={0.2}
+        maxZoom={2}
         proOptions={{ hideAttribution: true }}
         colorMode={isDarkMode ? 'dark' : 'light'}
+        className="aicser-flow"
       >
-        <Background />
-        <Controls />
+        {/* Same canvas as the semantic model diagram: dots, controls bottom-left, overview bottom-right. */}
+        <Background gap={16} size={1} />
+        <Controls position="bottom-left" />
+        <MiniMap position="bottom-right" pannable zoomable ariaLabel="Diagram overview" />
       </ReactFlow>
       ) : null}
     </div>

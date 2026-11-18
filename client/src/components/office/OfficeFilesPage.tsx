@@ -23,7 +23,6 @@ export interface OfficeFilesPageProps<Body> {
   /** Singular, lower case ("document"); the list's label is `title`. */
   noun: string;
   title: string;
-  description: string;
   /** Icon and colour of the cards and header. */
   fileType: FileType;
   /** Makes a new, empty file. */
@@ -125,14 +124,12 @@ export function OfficeFilesPage<Body>(props: Readonly<OfficeFilesPageProps<Body>
         else if (e.dataTransfer.files.length) toast.error(`Drop a ${extension} file to open it.`);
       }}
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <Icon className={`mt-1 size-6 ${iconColor}`} aria-hidden="true" />
-            <div>
-              <h1 className="m-0 text-xl font-semibold text-foreground">{title}</h1>
-              <p className="m-0 max-w-xl text-sm text-muted-foreground">{props.description}</p>
-            </div>
+      {/* Same width and padding as every other page (components/aicser-ui/page.tsx). */}
+      <div className="flex w-full flex-col gap-5 p-4 sm:p-6">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Icon className={`size-6 ${iconColor}`} aria-hidden="true" />
+            <h1 className="m-0 text-xl font-semibold text-foreground">{title}</h1>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => importing.mutate(undefined)} disabled={importing.isPending}>

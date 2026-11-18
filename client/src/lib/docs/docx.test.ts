@@ -142,6 +142,40 @@ describe('Word round trip', () => {
     expect(back.content.content?.map((n) => n.type)).toEqual(['paragraph', 'pageBreak', 'paragraph']);
   });
 
+  it('writes the header, footer and page numbers as Word fields', async () => {
+    const doc: JSONContent = { type: 'doc', content: [p(text('Body'))] };
+    const bytes = await documentToDocx('Elements', doc, {
+      size: 'a4',
+      orientation: 'portrait',
+      margins: 'normal',
+      header: 'Aicser Ltd',
+      footer: 'Confidential',
+      footerAlign: 'center',
+      pageNumbers: 'footer',
+      pageNumberStyle: 'pageOf',
+      differentFirstPage: true,
+    });
+    const zip = await JSZip.loadAsync(bytes);
+    const names = Object.keys(zip.files);
+    const read = async (prefix: string) =>
+      Promise.all(names.filter((n) => n.startsWith(prefix)).map((n) => zip.file(n)!.async('string')));
+    const headers = (await read('word/header')).join('');
+    const footers = (await read('word/footer')).join('');
+    expect(headers).toContain('Aicser Ltd');
+    expect(footers).toContain('Confidential');
+    expect(footers).toContain('PAGE');
+    expect(footers).toContain('NUMPAGES');
+    const xml = await zip.file('word/document.xml')!.async('string');
+    expect(xml).toContain('w:titlePg');
+  });
+
+  it('writes no header or footer when there are none', async () => {
+    const doc: JSONContent = { type: 'doc', content: [p(text('Body'))] };
+    const bytes = await documentToDocx('Plain', doc, { size: 'a4', orientation: 'portrait', margins: 'normal' });
+    const names = Object.keys((await JSZip.loadAsync(bytes)).files);
+    expect(names.some((n) => n.startsWith('word/header') || n.startsWith('word/footer'))).toBe(false);
+  });
+
   it('refuses a file that is not a Word document', async () => {
     await expect(docxToDocument(new Uint8Array([1, 2, 3]))).rejects.toThrow();
   });

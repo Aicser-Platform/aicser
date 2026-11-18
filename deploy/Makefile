@@ -8,6 +8,7 @@ DEV_EE_EXTRAS := $(DEV_EE) -f $(DEPLOY_DIR)/docker-compose.dev.extras.yml
 DEV_LEGACY := $(COMPOSE) -p deploy $(DEV_BASE)
 CE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ce.yml
 EE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ee.yml
+EE_MINIO   := $(EE) -f $(DEPLOY_DIR)/docker-compose.ee.minio.yml
 EE_SELF_HOST := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ee.self-host.yml
 EE_SELF_HOST_LOCAL_ENV ?= $(DEPLOY_DIR)/.env.ee.self-host.local.example
 EE_SELF_HOST_LOCAL := $(COMPOSE) --env-file $(EE_SELF_HOST_LOCAL_ENV) -f $(DEPLOY_DIR)/docker-compose.ee.self-host.yml -f $(DEPLOY_DIR)/docker-compose.ee.self-host.local.yml
@@ -136,6 +137,15 @@ ee-client-light:
 	$(EE) up -d --no-deps client
 ee-down:
 	$(EE) down
+# EE production build + local MinIO as the lake bucket (no dev server/client). Stops the dev stack first (same ports).
+ee-minio:
+	-$(DEV_EE) stop
+	$(EE_MINIO) up -d --build
+ee-minio-up:
+	-$(DEV_EE) stop
+	$(EE_MINIO) up -d
+ee-minio-down:
+	$(EE_MINIO) down
 ee-logs:
 	$(EE) logs -f
 # Optional, opt-in self-hosted model server (CPU-only Ollama). Off unless
@@ -218,7 +228,7 @@ seed-rbac-ee:
 seed-rbac-dev:
 	$(DEV_EE) exec server python -m ee.scripts.seed_rbac
 
-.PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down dev-ee dev-ee-build \
+.PHONY: ee-minio ee-minio-up ee-minio-down dev dev-ce dev-ce-build dev-ce-logs dev-ce-down dev-ee dev-ee-build \
         dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse dev-ee-ollama \
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
         ee-serial ee-build-server ee-build-client \

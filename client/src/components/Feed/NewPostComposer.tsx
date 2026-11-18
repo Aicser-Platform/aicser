@@ -1,19 +1,7 @@
 'use client';
 
-import './NewPostComposer.css';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Avatar, Button, Mentions, Select, Tag, Tooltip, message } from 'antd';
-import {
-  BulbOutlined,
-  CloseOutlined,
-  DashboardOutlined,
-  EyeOutlined,
-  LineChartOutlined,
-  LoadingOutlined,
-  PaperClipOutlined,
-  PictureOutlined,
-  SendOutlined,
-} from '@ant-design/icons';
+import { ChartLine, Eye, ImagePlus, Lightbulb, LayoutDashboard, Loader2, Paperclip, Send, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProfileStore } from '@/stores/useProfileStore';
@@ -21,15 +9,19 @@ import { useProjectStore } from '@/stores/useProjectStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { socialFeedService, type FeedImage, type FeedScope, type FeedVisibility } from '@/services/socialFeedService';
 import { FeedImageView } from './FeedImages';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/aicser-ui/avatar';
+import { Button } from '@/components/aicser-ui/button';
+import { MentionTextarea } from '@/components/aicser-ui/mention-textarea';
+import { NativeSelect, NativeSelectOption } from '@/components/aicser-ui/native-select';
+import { AicserUi } from '@/components/aicser-ui/scope';
+import { message } from '@/lib/ui/toast';
 import { useMentionableMembers, resolveMentionedUserIds } from '@/hooks/feed/useMentionableMembers';
 import { AttachmentPicker, type PickedAttachment } from './AttachmentPicker';
 import { consumePendingFeedAttachment } from './pendingFeedAttachment';
 
 const MAX_POST_IMAGES = 4;
 
-const isEnterpriseEdition = ['enterprise', 'ee'].includes(
-  (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase(),
-);
+const isEnterpriseEdition = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
 export interface NewPostComposerProps {
   /** Called with the newly-created post's id after a successful post, so the caller can prepend it to the feed. */
@@ -49,11 +41,7 @@ export interface NewPostComposerProps {
  * (an internal collaboration tool, not public-facing content). */
 type PostVisibility = Extract<FeedVisibility, 'private' | 'project' | 'organization'>;
 
-function visibilityFromFeedScope(
-  scope: FeedScope | undefined,
-  hasOrg: boolean,
-  hasProject: boolean,
-): PostVisibility {
+function visibilityFromFeedScope(scope: FeedScope | undefined, hasOrg: boolean, hasProject: boolean): PostVisibility {
   if (scope === 'private') return 'private';
   if (scope === 'project' && hasProject) return 'project';
   if (scope === 'organization' && hasOrg) return 'organization';
@@ -122,7 +110,7 @@ export function NewPostComposer({ onPosted, feedScope, onAudienceChange }: NewPo
         } finally {
           setUploading((n) => n - 1);
         }
-      }),
+      })
     );
   };
   const [posting, setPosting] = useState(false);
@@ -139,7 +127,8 @@ export function NewPostComposer({ onPosted, feedScope, onAudienceChange }: NewPo
   }, []);
 
   const mentionScope = visibility === 'organization' ? 'organization' : visibility === 'project' ? 'project' : null;
-  const mentionTargetId = mentionScope === 'organization' ? organizationId : mentionScope === 'project' ? projectId : undefined;
+  const mentionTargetId =
+    mentionScope === 'organization' ? organizationId : mentionScope === 'project' ? projectId : undefined;
   const { members, options: mentionOptions } = useMentionableMembers(mentionScope, mentionTargetId, user?.id);
 
   const visibilityOptions: { value: PostVisibility; label: string; disabled?: boolean }[] = isEnterpriseEdition
@@ -154,7 +143,8 @@ export function NewPostComposer({ onPosted, feedScope, onAudienceChange }: NewPo
       ]
     : [{ value: 'private', label: t('scope_private') }];
 
-  const canPost = (text.trim().length > 0 || attachments.length > 0 || images.length > 0) && !posting && uploading === 0;
+  const canPost =
+    (text.trim().length > 0 || attachments.length > 0 || images.length > 0) && !posting && uploading === 0;
 
   const handlePost = async () => {
     const trimmed = text.trim();
@@ -202,7 +192,8 @@ export function NewPostComposer({ onPosted, feedScope, onAudienceChange }: NewPo
     const fromProfile = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim();
     if (fromProfile) return fromProfile;
     const meta = user?.user_metadata as Record<string, unknown> | undefined;
-    const full = (typeof meta?.full_name === 'string' && meta.full_name) || (typeof meta?.name === 'string' && meta.name) || '';
+    const full =
+      (typeof meta?.full_name === 'string' && meta.full_name) || (typeof meta?.name === 'string' && meta.name) || '';
     return full.trim() || profile?.username || user?.username || user?.email || '';
   }, [user, profile]);
 
@@ -226,129 +217,129 @@ export function NewPostComposer({ onPosted, feedScope, onAudienceChange }: NewPo
 
   if (!isEnterpriseEdition) return null;
 
+  const attachmentIcon = (type: PickedAttachment['asset_type']) =>
+    type === 'chart' ? <ChartLine /> : type === 'insight' ? <Lightbulb /> : <LayoutDashboard />;
+
   return (
-    <div className="new-post-composer">
-      <Avatar size={40} src={profile?.avatar_url || undefined}>
-        {authorName.slice(0, 1).toUpperCase() || '?'}
-      </Avatar>
-      <div className="new-post-composer-body">
-        <Mentions
-          value={text}
-          onChange={setText}
-          options={mentionOptions}
-          placeholder={t('post_placeholder')}
-          autoSize={{ minRows: 2, maxRows: 8 }}
-          className="new-post-composer-input"
-          autoFocus={focusOnMount}
-          onPaste={(e: React.ClipboardEvent) => {
-            const files = Array.from(e.clipboardData?.files || []).filter((f) => f.type.startsWith('image/'));
-            if (files.length) {
-              e.preventDefault();
-              void addImageFiles(files);
-            }
-          }}
-        />
+    <AicserUi>
+      <div className="flex gap-3 rounded-xl border bg-card p-4">
+        <Avatar className="size-9">
+          {profile?.avatar_url ? <AvatarImage src={profile.avatar_url} alt="" /> : null}
+          <AvatarFallback className="bg-secondary text-sm font-medium text-secondary-foreground">
+            {authorName.slice(0, 1).toUpperCase() || '?'}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <MentionTextarea
+            value={text}
+            onChange={setText}
+            options={mentionOptions}
+            placeholder={t('post_placeholder')}
+            aria-label={t('post_placeholder')}
+            minRows={2}
+            maxRows={8}
+            autoFocus={focusOnMount}
+            onPaste={(e) => {
+              const files = Array.from(e.clipboardData?.files || []).filter((f) => f.type.startsWith('image/'));
+              if (files.length) {
+                e.preventDefault();
+                void addImageFiles(files);
+              }
+            }}
+          />
 
-        {(images.length > 0 || uploading > 0) && (
-          <div className="new-post-composer-images">
-            {images.map((img) => (
-              <div key={img.id} className="new-post-composer-image">
-                <FeedImageView image={img} height={88} />
-                <Button
-                  size="small"
-                  shape="circle"
-                  icon={<CloseOutlined />}
-                  aria-label={t('image_remove')}
-                  className="new-post-composer-image-remove"
-                  onClick={() => setImages((prev) => prev.filter((x) => x.id !== img.id))}
-                />
-              </div>
-            ))}
-            {Array.from({ length: uploading }).map((_, i) => (
-              <div key={`up-${i}`} className="new-post-composer-image new-post-composer-image--loading">
-                <LoadingOutlined />
-              </div>
-            ))}
-          </div>
-        )}
+          {images.length > 0 || uploading > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {images.map((img) => (
+                <div key={img.id} className="relative w-28 overflow-hidden rounded-lg border">
+                  <FeedImageView image={img} height={88} />
+                  <Button
+                    size="icon-xs"
+                    variant="secondary"
+                    aria-label={t('image_remove')}
+                    className="absolute right-1 top-1 rounded-full"
+                    onClick={() => setImages((prev) => prev.filter((x) => x.id !== img.id))}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              ))}
+              {Array.from({ length: uploading }).map((_, i) => (
+                <div
+                  key={`up-${i}`}
+                  className="flex h-[88px] w-28 items-center justify-center rounded-lg border bg-muted"
+                >
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+                </div>
+              ))}
+            </div>
+          ) : null}
 
-        {attachments.length > 0 && (
-          <div className="new-post-composer-attachments">
-            {attachments.map((a) => (
-              <Tag
-                key={a.publication_id || a.asset_id}
-                icon={
-                  a.asset_type === 'chart' ? (
-                    <LineChartOutlined />
-                  ) : a.asset_type === 'insight' ? (
-                    <BulbOutlined />
-                  ) : (
-                    <DashboardOutlined />
-                  )
-                }
-                closable
-                onClose={() =>
-                  setAttachments((prev) =>
-                    prev.filter((x) => (x.publication_id || x.asset_id) !== (a.publication_id || a.asset_id)),
-                  )
-                }
-              >
-                {a.title}
-              </Tag>
-            ))}
-          </div>
-        )}
+          {attachments.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {attachments.map((a) => (
+                <span
+                  key={a.publication_id || a.asset_id}
+                  className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border bg-secondary pl-2 pr-0.5 text-xs [&>svg]:size-3.5 [&>svg]:shrink-0"
+                >
+                  {attachmentIcon(a.asset_type)}
+                  <span className="truncate">{a.title}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={t('image_remove')}
+                    onClick={() =>
+                      setAttachments((prev) =>
+                        prev.filter((x) => (x.publication_id || x.asset_id) !== (a.publication_id || a.asset_id))
+                      )
+                    }
+                  >
+                    <X />
+                  </Button>
+                </span>
+              ))}
+            </div>
+          ) : null}
 
-        {scopeMismatchHint ? (
-          <div className="new-post-composer-audience-hint">
-            <span className="new-post-composer-audience-note">{scopeMismatchHint}</span>
-          </div>
-        ) : null}
+          {scopeMismatchHint ? <p className="m-0 text-xs text-muted-foreground">{scopeMismatchHint}</p> : null}
 
-        <div className="new-post-composer-footer">
-          <div className="new-post-composer-footer-left">
-            {/* Who sees this post — a compact choice, not a second copy of the feed's
-                scope filter above (which it defaults to). */}
-            <Tooltip title={audienceHint}>
-              <Select
-                size="small"
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Who sees this post: defaults to the feed being read (a compact choice, not a second scope filter). */}
+            <div className="relative" title={audienceHint}>
+              <Eye
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <NativeSelect
+                aria-label={audienceHint}
+                className="[&_select]:pl-7"
                 value={visibility}
-                onChange={(v) => {
+                onChange={(e) => {
+                  const v = e.target.value as PostVisibility;
                   setVisibilityTouched(true);
-                  setVisibility(v as PostVisibility);
+                  setVisibility(v);
                   onAudienceChange?.(v as FeedScope);
                 }}
-                options={visibilityOptions}
-                popupMatchSelectWidth={false}
-                aria-label={audienceHint}
-                className="new-post-composer-audience"
-                labelRender={({ label }) => (
-                  <span className="new-post-composer-audience-label">
-                    <EyeOutlined aria-hidden /> {label}
-                  </span>
-                )}
-              />
-            </Tooltip>
-            <Button
-              size="small"
-              type={attachments.length > 0 ? 'default' : 'primary'}
-              ghost={attachments.length === 0}
-              icon={<PaperClipOutlined />}
-              disabled={attachments.length >= 5}
-              onClick={() => setPickerOpen(true)}
-              className="new-post-composer-attach"
-            >
+              >
+                {visibilityOptions.map((o) => (
+                  <NativeSelectOption key={o.value} value={o.value} disabled={o.disabled}>
+                    {o.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+            <Button variant="outline" disabled={attachments.length >= 5} onClick={() => setPickerOpen(true)}>
+              <Paperclip />
               {attachments.length > 0
                 ? t('attach_insight_button_more', { count: attachments.length })
                 : t('attach_insight_button')}
             </Button>
             <Button
-              size="small"
-              icon={<PictureOutlined />}
+              variant="outline"
               disabled={images.length + uploading >= MAX_POST_IMAGES}
               onClick={() => fileInputRef.current?.click()}
-              className="new-post-composer-attach"
             >
+              <ImagePlus />
               {t('image_add')}
             </Button>
             <input
@@ -363,10 +354,11 @@ export function NewPostComposer({ onPosted, feedScope, onAudienceChange }: NewPo
                 void addImageFiles(files);
               }}
             />
+            <Button className="ml-auto" disabled={!canPost} onClick={() => void handlePost()}>
+              {posting ? <Loader2 className="animate-spin" /> : <Send />}
+              {attachments.length > 0 && !text.trim() ? t('post_insight_button') : t('post_button')}
+            </Button>
           </div>
-          <Button type="primary" icon={<SendOutlined />} disabled={!canPost} loading={posting} onClick={() => void handlePost()}>
-            {attachments.length > 0 && !text.trim() ? t('post_insight_button') : t('post_button')}
-          </Button>
         </div>
       </div>
 
@@ -381,7 +373,7 @@ export function NewPostComposer({ onPosted, feedScope, onAudienceChange }: NewPo
         }}
         onClose={() => setPickerOpen(false)}
       />
-    </div>
+    </AicserUi>
   );
 }
 

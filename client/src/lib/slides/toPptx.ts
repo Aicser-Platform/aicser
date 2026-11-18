@@ -1,4 +1,5 @@
 import PptxGenJS from 'pptxgenjs';
+import { FOOTER_BOXES, FOOTER_FONT_PT, slideFooter } from './footer';
 import {
   SLIDE_WIDTH,
   elementColor,
@@ -76,12 +77,33 @@ export async function presentationToPptx(title: string, body: PresentationBody):
   pres.title = title;
   pres.company = 'Aicser';
   pres.theme = { headFontFace: theme.headingFont, bodyFontFace: theme.bodyFont };
-  for (const s of body.slides) {
+  const now = new Date();
+  body.slides.forEach((s, index) => {
     const slide = pres.addSlide();
     slide.background = { color: hex(s.background ?? theme.background) };
     for (const el of s.elements) addElement(pres, slide, el, theme);
+    const footer = slideFooter(body.footer, s, index, now);
+    if (footer) {
+      // Text in PowerPoint's own footer boxes. The slide number is PowerPoint's field, so it renumbers itself.
+      const text = {
+        fontFace: theme.bodyFont,
+        fontSize: FOOTER_FONT_PT,
+        color: hex(theme.text),
+        valign: 'middle' as const,
+      };
+      const box = (b: (typeof FOOTER_BOXES)[keyof typeof FOOTER_BOXES]) => ({
+        x: inches(b.x),
+        y: inches(b.y),
+        w: inches(b.w),
+        h: inches(b.h),
+        align: b.align,
+      });
+      if (footer.date) slide.addText(footer.date, { ...box(FOOTER_BOXES.date), ...text });
+      if (footer.text) slide.addText(footer.text, { ...box(FOOTER_BOXES.text), ...text });
+      if (footer.number) slide.slideNumber = { ...box(FOOTER_BOXES.number), ...text };
+    }
     if (s.notes.trim()) slide.addNotes(s.notes);
-  }
+  });
   const out = await pres.write({ outputType: 'uint8array' });
   if (out instanceof Uint8Array) return out;
   if (out instanceof ArrayBuffer) return new Uint8Array(out);

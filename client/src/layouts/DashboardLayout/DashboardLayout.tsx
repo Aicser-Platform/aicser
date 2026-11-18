@@ -1,279 +1,185 @@
-import { Grid, Layout, theme, message } from 'antd';
-import React, { useState, useCallback } from 'react';
-import { LayoutHeader } from '../Header/Header';
-import Navigation, { EXPANDED_WIDTH } from '../Navigation/Navigation';
-import { RAIL_WIDTH } from '../Navigation/SidebarNav';
-import MobileBottomNav from '../Navigation/MobileBottomNav';
-import '@/layouts/Navigation/MobileBottomNav.css';
-import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
-import { useDataSources } from '@/hooks/useDataSources';
-import { useDataSourceStore } from '@/stores/useDataSourceStore';
+'use client';
+
+import React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { AppHeader } from '@/components/app-shell/AppHeader';
+import { AppSidebar } from '@/components/app-shell/AppSidebar';
+import { MobileNav } from '@/components/app-shell/MobileNav';
+import { SidebarProvider } from '@/components/aicser-ui/sidebar';
+import { Toaster } from '@/components/aicser-ui/sonner';
+import { TooltipProvider } from '@/components/aicser-ui/tooltip';
+import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
 import { OnboardingBootstrap } from '@/components/onboarding/OnboardingBootstrap';
 import { CE_ONBOARDING_AWAITING_DATA, CE_ONBOARDING_DATA_CONNECTED } from '@/components/onboarding/CeOnboardingModal';
+import { useDataSources } from '@/hooks/useDataSources';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
+import '@/styles/aicser-ui.css';
+import '@/styles/app-shell.css';
 
 const USER_PREFERENCES_KEY = 'userPreferences';
+/** Below this the sidebar gives way to the tab bar (was antd's `lg`). */
+const MOBILE_QUERY = '(max-width: 991.98px)';
+/** Below this (tablets, small laptops) the sidebar starts as the icon rail. */
+const COMPACT_QUERY = '(max-width: 1199.98px)';
 
-function getStoredLayoutSidebarCollapsed(): boolean {
-  if (typeof window === 'undefined') return true;
+function readSidebarCollapsed(): boolean {
   try {
-    const prefsRaw = window.localStorage.getItem(USER_PREFERENCES_KEY);
-    if (prefsRaw) {
-      const prefs = JSON.parse(prefsRaw);
-      if (typeof prefs?.isSidebarCollapsed === 'boolean') {
-        return prefs.isSidebarCollapsed;
-      }
-    }
-    return true;
+    const prefs = JSON.parse(window.localStorage.getItem(USER_PREFERENCES_KEY) || '{}');
+    return typeof prefs?.isSidebarCollapsed === 'boolean' ? prefs.isSidebarCollapsed : true;
   } catch {
     return true;
   }
 }
 
-function setStoredLayoutSidebarCollapsed(collapsed: boolean): void {
-  if (typeof window === 'undefined') return;
+function writeSidebarCollapsed(collapsed: boolean): void {
   try {
-    const prefsRaw = window.localStorage.getItem(USER_PREFERENCES_KEY);
-    const prefs = prefsRaw ? JSON.parse(prefsRaw) : {};
-    prefs.isSidebarCollapsed = collapsed;
-    window.localStorage.setItem(USER_PREFERENCES_KEY, JSON.stringify(prefs));
+    const prefs = JSON.parse(window.localStorage.getItem(USER_PREFERENCES_KEY) || '{}');
+    window.localStorage.setItem(USER_PREFERENCES_KEY, JSON.stringify({ ...prefs, isSidebarCollapsed: collapsed }));
   } catch {
-    // ignore storage failures
+    // only a convenience
   }
 }
 
-const { useBreakpoint } = Grid;
-const { Content } = Layout;
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = React.useState(false);
+  React.useEffect(() => {
+    const list = window.matchMedia(query);
+    const update = () => setMatches(list.matches);
+    update();
+    list.addEventListener('change', update);
+    return () => list.removeEventListener('change', update);
+  }, [query]);
+  return matches;
+}
 
 interface CustomLayoutProps {
   children: React.ReactNode;
   banner?: React.ReactNode;
 }
 
+/**
+ * App shell in the desktop's design (Aicser UI): sidebar · header · page, tab bar on phones. Only the chrome is
+ * inside the `.aicser-ui` scope; pages render outside it, so AntD pages keep their own styles until they move over.
+ */
 const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children, banner }) => {
-    const t = useTranslations('layout');
-  const [collapsed, setCollapsed] = useState(() => getStoredLayoutSidebarCollapsed());
-  const [isBreakpoint, setIsBreakpoint] = useState(false);
-  const [showDataSourceModal, setShowDataSourceModal] = useState(false);
-  const [dataSourceModalInitialType, setDataSourceModalInitialType] = useState<'sample_duckdb' | undefined>(undefined);
+  const t = useTranslations('layout');
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+  const isCompact = useMediaQuery(COMPACT_QUERY);
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  React.useEffect(() => {
+    setSidebarOpen(isCompact ? false : !readSidebarCollapsed());
+  }, [isCompact]);
+  const changeSidebar = React.useCallback(
+    (open: boolean) => {
+      setSidebarOpen(open);
+      if (!isCompact) writeSidebarCollapsed(!open);
+    },
+    [isCompact]
+  );
+
+  const [showDataSourceModal, setShowDataSourceModal] = React.useState(false);
+  const [initialType, setInitialType] = React.useState<'sample_duckdb' | undefined>(undefined);
   const { dataSources, isLoading: dataSourcesLoading } = useDataSources();
   const failedDataSourcesCount = React.useMemo(
     () => dataSources.filter((ds) => ds.connection_status === 'failed').length,
     [dataSources]
   );
-  const { select: contextSelectDataSource } = useDataSourceStore();
-  const qc = useQueryClient();
-  const refreshDataSources = () => qc.invalidateQueries({ queryKey: ['data-sources'] });
+  const { select: selectDataSource } = useDataSourceStore();
+  const queryClient = useQueryClient();
 
-  const screens = useBreakpoint();
-
-  // After onboarding: prompt first-time users to connect a data source (auto-open modal once when they have none)
+  // Right after onboarding, someone with no data source is asked to connect one (once).
   React.useEffect(() => {
     if (dataSourcesLoading || dataSources.length > 0) return;
     try {
       if (sessionStorage.getItem('onboarding_just_completed') === 'true') {
         sessionStorage.removeItem('onboarding_just_completed');
-        const t = setTimeout(() => setShowDataSourceModal(true), 800);
-        return () => clearTimeout(t);
+        const id = setTimeout(() => setShowDataSourceModal(true), 800);
+        return () => clearTimeout(id);
       }
-    } catch {}
+    } catch {
+      // storage unavailable
+    }
   }, [dataSourcesLoading, dataSources.length]);
 
-  // Global open-data-source-modal event: this layout is the only place that
-  // actually owns the modal (Header's own "Add Data Source" icon just calls
-  // onOpenDataSourceModal, wired below) — a deeply nested component (e.g.
-  // Studio's Data/Data Modeling empty states) would otherwise need this prop
-  // drilled through several layers with no existing path to do so. Query
-  // Editor already has its own page-local version of this same pattern
-  // (window event 'query-editor-open-connect-data'); this is the
-  // layout-wide equivalent so any page under this layout can trigger it.
+  // Any page can open the connect dialog (it lives here): window event 'aiser-open-data-source-modal'.
   React.useEffect(() => {
-    const handler = () => setShowDataSourceModal(true);
-    window.addEventListener('aiser-open-data-source-modal', handler);
-    return () => window.removeEventListener('aiser-open-data-source-modal', handler);
+    const open = () => setShowDataSourceModal(true);
+    window.addEventListener('aiser-open-data-source-modal', open);
+    return () => window.removeEventListener('aiser-open-data-source-modal', open);
   }, []);
 
-  React.useEffect(() => {
-    setIsBreakpoint(!screens.lg);
-    if (!screens.lg) {
-      setCollapsed(true);
-      return;
-    }
-    // On tablet landscape and compact screens (<1200px, e.g. iPad mini / 1024px),
-    // default to collapsed rail (64px) so the workspace has sufficient breathing room.
-    if (!screens.xl) {
-      setCollapsed(true);
-      return;
-    }
-    setCollapsed(getStoredLayoutSidebarCollapsed());
-  }, [screens]);
-
-  React.useEffect(() => {
-    if (!isBreakpoint && screens.xl) {
-      setStoredLayoutSidebarCollapsed(collapsed);
-    }
-  }, [collapsed, isBreakpoint, screens.xl]);
-
-  const sidebarOffset = React.useMemo(
-    () => (isBreakpoint ? 0 : collapsed ? RAIL_WIDTH : EXPANDED_WIDTH),
-    [collapsed, isBreakpoint]
-  );
-
-  React.useEffect(() => {
-    document.documentElement.style.setProperty('--sidebar-width', `${sidebarOffset}px`);
-  }, [sidebarOffset]);
-
-  // On mobile, tapping the backdrop closes the sidebar
-  const handleBackdropClick = useCallback(() => {
-    if (isBreakpoint && !collapsed) {
-      setCollapsed(true);
-    }
-  }, [isBreakpoint, collapsed]);
-
-  // Show backdrop overlay when sidebar is open on mobile
-  const showMobileBackdrop = isBreakpoint && !collapsed;
-
   return (
-    <Layout
-      className={isBreakpoint ? 'layout-app-shell layout--mobile-nav' : 'layout-app-shell'}
-      style={{
-        height: '100dvh',
-        maxHeight: '100dvh',
-        margin: 0,
-        padding: 0,
-        background: 'var(--ant-color-bg-layout)',
-        overflow: 'hidden',
-      }}
-      hasSider={!isBreakpoint}
-    >
-      {!isBreakpoint && (
-        <React.Suspense fallback={null}>
-          <Navigation
-            collapsed={collapsed}
-            isBreakpoint={isBreakpoint}
-            onCollapse={setCollapsed}
-            onBreakpoint={setIsBreakpoint}
-          />
-        </React.Suspense>
-      )}
-
-      {isBreakpoint && <MobileBottomNav />}
-
-      {/* Desktop sidebar backdrop only (mobile uses bottom nav + more drawer) */}
-      {showMobileBackdrop && !isBreakpoint && (
+    <TooltipProvider delayDuration={300}>
+      <SidebarProvider open={sidebarOpen} onOpenChange={changeSidebar}>
+        {/* Legacy class names on the chrome (layout-app-header, app-navigation-sider, layout-main-column,
+            mobile-bottom-nav) are what dashboard print/export uses to hide it or let the page grow. */}
         <div
-          className="mobile-sidebar-backdrop"
-          onClick={handleBackdropClick}
-          style={{
-            position: 'fixed',
-            top: 'var(--app-header-height, 48px)' /* Below header */,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.4)',
-            zIndex: 999 /* Below sidebar (1000), below header (1001) */,
-            cursor: 'pointer',
-            transition: 'opacity 0.25s ease',
-          }}
-          aria-hidden="true"
-        />
-      )}
-
-      <Layout
-        className="layout-main-column"
-        style={{
-          height: '100dvh',
-          maxHeight: '100dvh',
-          display: 'flex',
-          flexDirection: 'column',
-          marginTop: 0,
-          padding: 0,
-          background: 'var(--ant-color-bg-layout)',
-          overflow: 'hidden',
-        }}
-      >
-        <LayoutHeader
-          isBreakpoint={isBreakpoint}
-          collapsed={collapsed}
-          setCollapsed={setCollapsed}
-          onOpenDataSourceModal={() => setShowDataSourceModal(true)}
-          highlightConnectData={!dataSourcesLoading && dataSources.length === 0}
-          failedDataSourcesCount={failedDataSourcesCount}
-        />
-        {banner}
-        <Content
-          id="main-content"
-          tabIndex={-1}
-          className={`layout-page-content${isBreakpoint ? ' layout-main-content' : ''}`}
-          style={{
-            flex: 1,
-            minHeight: 0,
-            margin: 0,
-            padding: 0,
-            background: 'var(--ant-color-bg-layout)',
-            position: 'relative',
-            boxSizing: 'border-box',
-            border: 'none',
-            outline: 'none',
-            width: '100%',
-            overflowY: 'hidden',
-            overflowX: 'hidden',
-          }}
+          className="flex h-dvh max-h-dvh w-full overflow-hidden"
+          style={{ background: 'var(--ant-color-bg-layout)' }}
         >
-          <div
-            className="page-content"
-            style={{
-              width: '100%',
-              height: '100%',
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            {children}
+          <div className="aicser-ui">{!isMobile ? <AppSidebar /> : null}</div>
+          <div className="layout-main-column flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="aicser-ui">
+              <AppHeader
+                isMobile={isMobile}
+                onOpenDataSourceModal={() => setShowDataSourceModal(true)}
+                highlightConnectData={!dataSourcesLoading && dataSources.length === 0}
+                failedDataSourcesCount={failedDataSourcesCount}
+              />
+            </div>
+            {banner}
+            <main
+              id="main-content"
+              tabIndex={-1}
+              className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden outline-none"
+            >
+              <div className="page-content">{children}</div>
+            </main>
+            <div className="aicser-ui">{isMobile ? <MobileNav /> : null}</div>
           </div>
-        </Content>
-      </Layout>
+        </div>
+      </SidebarProvider>
+
+      <div className="aicser-ui">
+        <Toaster />
+      </div>
 
       <UniversalDataSourceModal
         isOpen={showDataSourceModal}
-        initialDataSourceType={dataSourceModalInitialType}
+        initialDataSourceType={initialType}
         onClose={() => {
           setShowDataSourceModal(false);
-          setDataSourceModalInitialType(undefined);
+          setInitialType(undefined);
         }}
-        onDataSourceCreated={async (dataSource: any) => {
+        onDataSourceCreated={async (dataSource: { id?: string; name?: string } | null) => {
           setShowDataSourceModal(false);
-          setDataSourceModalInitialType(undefined);
+          setInitialType(undefined);
           try {
-            await refreshDataSources();
-            if (dataSource?.id) {
-              contextSelectDataSource(dataSource.id);
-            }
-            message.success(
-              t('toast_ds_connected', { name: dataSource?.name ?? t('unknown') }),
-            );
+            await queryClient.invalidateQueries({ queryKey: ['data-sources'] });
+            if (dataSource?.id) selectDataSource(dataSource.id);
+            toast.success(t('toast_ds_connected', { name: dataSource?.name ?? t('unknown') }));
             try {
               if (sessionStorage.getItem(CE_ONBOARDING_AWAITING_DATA) === '1') {
                 window.dispatchEvent(new CustomEvent(CE_ONBOARDING_DATA_CONNECTED));
               }
             } catch {
-              /* ignore */
+              // storage unavailable
             }
           } catch {
-            message.error(t('toast_refresh_datasources_failed'));
+            toast.error(t('toast_refresh_datasources_failed'));
           }
         }}
         isChatIntegration={false}
       />
       <OnboardingBootstrap
-        onConnectData={(initialType) => {
-          setDataSourceModalInitialType(initialType);
+        onConnectData={(type) => {
+          setInitialType(type);
           setShowDataSourceModal(true);
         }}
       />
-    </Layout>
+    </TooltipProvider>
   );
 });
 

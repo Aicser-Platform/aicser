@@ -27,6 +27,7 @@ from src.modules.prep.schemas import (
     PublishRequest,
     RecipeCreate,
     RecipeUpdate,
+    SaveAllRequest,
     SaveAsTableRequest,
 )
 from src.shared.middleware.rate_limiter import rate_limit
@@ -333,7 +334,7 @@ async def save_as_table(recipe_id: str, req: SaveAsTableRequest, current_token: 
     caller = caller_from_token(current_token)
     recipe = await _load(db, recipe_id, caller, write=True)
     await require_permission(caller.user_id, "data:upload", organization_id=caller.organization_id, project_id=caller.project_id)
-    result = await service.save_as_table(caller, recipe, (req.name or f"{recipe.name} (prepared)").strip())
+    result = await service.save_as_table(caller, recipe, (req.name or "").strip() or None, db)
     from datetime import datetime, timezone
 
     recipe.output = {"mode": "table", **result, "ran_at": datetime.now(timezone.utc).isoformat(),
@@ -344,3 +345,37 @@ async def save_as_table(recipe_id: str, req: SaveAsTableRequest, current_token: 
 
         await apply_column_meaning(db, result["data_source_id"], recipe.column_meta)
     return result
+
+
+@router.get("/sources/{data_source_id}/overview")
+async def source_overview(data_source_id: str, project_id: Optional[str] = Query(default=None),
+                          current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+                          db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
+    """Every table of a source with its recipe and its place in the clean copy."""
+    caller = await resolve_organization(caller_from_token(current_token, project_id), db, None)
+    return await service.source_overview(caller, db, data_source_id)
+
+
+@router.post("/sources/{data_source_id}/save-all")
+@rate_limit(requests_per_minute=4, bucket="prep_save_all")
+async def save_all(data_source_id: str, req: SaveAllRequest, project_id: Optional[str] = Query(default=None),
+                   current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+                   db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
+    """Fill the source's clean copy from every published recipe (and the other tables as they are)."""
+    caller = await resolve_organization(caller_from_token(current_token, project_id), db, None)
+    await service.load_source_for(caller, data_source_id)
+    await require_permission(caller.user_id, "data:upload", organization_id=caller.organization_id, project_id=caller.project_id)
+    return await service.save_all(caller, db, data_source_id, include_unprepared=req.include_unprepared,
+                                  only=req.tables, name=(req.name or "").strip() or None)
+
+
+@router.get("/clean-copies")
+async def clean_copies(project_id: Optional[str] = Query(default=None),
+                       current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+                       db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
+    """The project's clean copies, each with the source it was prepared from."""
+    from src.modules.prep import clean_copy
+
+    caller = await resolve_organization(caller_from_token(current_token, project_id), db, None)
+    await require_permission(caller.user_id, "query:execute", organization_id=caller.organization_id, project_id=caller.project_id)
+    return {"clean_copies": await clean_copy.list_for_project(db, caller.project_id)}

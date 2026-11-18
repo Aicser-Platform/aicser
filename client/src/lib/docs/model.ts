@@ -19,6 +19,16 @@ export const PageSetupSchema = z.object({
   size: z.enum(['a4', 'letter']).default('a4'),
   margins: z.enum(['normal', 'narrow', 'wide']).default('normal'),
   orientation: z.enum(['portrait', 'landscape']).default('portrait'),
+  // Page elements (all optional: documents saved before them have none).
+  header: z.string().max(300).optional(),
+  headerAlign: z.enum(['left', 'center', 'right']).optional(),
+  footer: z.string().max(300).optional(),
+  footerAlign: z.enum(['left', 'center', 'right']).optional(),
+  pageNumbers: z.enum(['none', 'header', 'footer']).optional(),
+  pageNumberAlign: z.enum(['left', 'center', 'right']).optional(),
+  pageNumberStyle: z.enum(['number', 'pageOf']).optional(),
+  /** Page 1 shows no header, footer or number (a title page). */
+  differentFirstPage: z.boolean().optional(),
 });
 export type PageSetup = z.infer<typeof PageSetupSchema>;
 

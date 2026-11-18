@@ -3,6 +3,7 @@
 import { Play } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/aicser-ui/button';
+import { slideFooter } from '@/lib/slides/footer';
 import { SLIDE_WIDTH, slideTitle, themeById, type PresentationBody } from '@/lib/slides/model';
 import { PresentMode } from './PresentMode';
 import { SlideView } from './SlideView';
@@ -29,7 +30,13 @@ export function PresentationViewer({ body }: Readonly<{ body: PresentationBody }
                 className="w-fit cursor-pointer overflow-hidden rounded-md border-0 bg-transparent p-0 shadow-md"
                 onClick={() => setPresenting(i)}
               >
-                <SlideView slide={slide} theme={theme} scale={width / SLIDE_WIDTH} className="pointer-events-none" />
+                <SlideView
+                  slide={slide}
+                  theme={theme}
+                  scale={width / SLIDE_WIDTH}
+                  footer={slideFooter(body.footer, slide, i)}
+                  className="pointer-events-none"
+                />
               </button>
               <span className="text-xs text-muted-foreground">
                 {i + 1} / {body.slides.length}
@@ -39,7 +46,13 @@ export function PresentationViewer({ body }: Readonly<{ body: PresentationBody }
         </ol>
       </div>
       {presenting !== null && (
-        <PresentMode slides={body.slides} theme={theme} start={presenting} onExit={() => setPresenting(null)} />
+        <PresentMode
+          slides={body.slides}
+          theme={theme}
+          footer={body.footer}
+          start={presenting}
+          onExit={() => setPresenting(null)}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useLayoutEffect, useState } from 'react';
+import { PageSheets } from '@/components/docs/PageSheets';
 import { ZoomControl } from '@/components/office/ZoomControl';
 import { documentExtensions } from '@/lib/docs/extensions';
 import { PAGE_MARGINS, pageDimensions, type DocumentBody } from '@/lib/docs/model';
@@ -37,14 +38,7 @@ export function DocumentReader({ body }: Readonly<{ body: DocumentBody }>) {
       <div className="doc-desk min-h-0 flex-1 overflow-auto bg-muted/60 py-8">
         <div style={{ zoom }} className="mx-auto w-fit">
           <div className="relative" style={{ width: `${widthMm}mm`, height: pages * stride - PAGE_GAP }}>
-            {Array.from({ length: pages }, (_, i) => (
-              <div
-                key={i}
-                aria-hidden="true"
-                className="absolute inset-x-0 bg-white shadow-md"
-                style={{ top: i * stride, height: pageHeight }}
-              />
-            ))}
+            <PageSheets page={body.page} pages={pages} stride={stride} pageHeight={pageHeight} margin={margin} />
             <div className="doc-page relative h-full text-black" style={{ padding: margin }}>
               <EditorContent editor={editor} className="h-full" />
             </div>

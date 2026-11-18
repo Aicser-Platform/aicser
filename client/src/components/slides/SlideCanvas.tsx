@@ -12,6 +12,8 @@ import {
   type SlideElement,
   type Theme,
 } from '@/lib/slides/model';
+import { SlideFooterLayer } from '@/components/slides/SlideFooterLayer';
+import type { FooterContent } from '@/lib/slides/footer';
 import { cn } from '@/lib/ui/utils';
 import { textBoxStyle } from '@/lib/slides/textStyle';
 import { ElementView } from './SlideView';
@@ -54,9 +56,12 @@ export function SlideCanvas({
   onStartEdit,
   onEndEdit,
   onKeyDown,
+  footer = null,
 }: Readonly<{
   slide: Slide;
   theme: Theme;
+  /** The date / footer / slide number row (Header & footer), drawn under the elements. */
+  footer?: FooterContent | null;
   selectedId: string | null;
   editingId: string | null;
   onSelect: (id: string | null) => void;
@@ -169,6 +174,7 @@ export function SlideCanvas({
             background: slide.background ?? theme.background,
           }}
         >
+          {footer && <SlideFooterLayer content={footer} theme={theme} />}
           {slide.elements.map((el) => {
             const box = live?.id === el.id ? live.box : el;
             const shown = { ...el, ...box };

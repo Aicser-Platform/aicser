@@ -1,31 +1,11 @@
-'use client';
-
-import React from 'react';
-import { useTranslations } from 'next-intl';
-import { Button, Input, Segmented, Select, Space } from 'antd';
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-
-export type Condition = { column: string; op: string; value?: string; value2?: string };
-
-export const CONDITION_OPS = [
-  'equals',
-  'not_equals',
-  'contains',
-  'not_contains',
-  'starts_with',
-  'ends_with',
-  'gt',
-  'gte',
-  'lt',
-  'lte',
-  'between',
-  'is_empty',
-  'not_empty',
-  'in_list',
-  'matches',
-] as const;
-
-const NO_VALUE = new Set(['is_empty', 'not_empty']);
+// Ported from ../aicser/client/src/components/prep/ConditionBuilder.tsx @ 749d38d (see PORTING.md). UI rewritten.
+import { Plus, Trash2 } from 'lucide-react';
+import { Button } from '@/components/aicser-ui/button';
+import { Input } from '@/components/aicser-ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/aicser-ui/native-select';
+import { CONDITION_OPS, NO_VALUE, type Condition } from '@/lib/prep/conditions';
+import { tPrep as t } from '@/lib/prep/i18n';
+import { ColumnSelect, Segmented } from './controls';
 
 /** Rows that match all (or any) of these conditions. Values are compared without case. */
 export function ConditionBuilder({
@@ -41,79 +21,88 @@ export function ConditionBuilder({
   match: 'all' | 'any';
   onMatchChange: (next: 'all' | 'any') => void;
 }) {
-  const t = useTranslations('prepare');
-  const set = (i: number, patch: Partial<Condition>) => onChange(value.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const set = (i: number, patch: Partial<Condition>) =>
+    onChange(value.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={8}>
-      {value.length > 1 ? (
+    <div className="flex flex-col gap-2">
+      {value.length > 1 && (
         <Segmented
-          size="small"
+          size="xs"
+          label={t('field_condition')}
           value={match}
-          onChange={(v) => onMatchChange(v as 'all' | 'any')}
+          onChange={onMatchChange}
           options={[
             { value: 'all', label: t('match_all') },
             { value: 'any', label: t('match_any') },
           ]}
         />
-      ) : null}
+      )}
       {value.map((c, i) => (
-        <Space key={i} wrap size={6} style={{ width: '100%' }}>
-          <Select
-            size="small"
-            showSearch
-            style={{ minWidth: 160 }}
-            value={c.column || undefined}
+        <div key={i} className="flex flex-wrap items-center gap-1.5">
+          <ColumnSelect
+            className="w-44"
+            label={t('field_column')}
             placeholder={t('field_column')}
-            onChange={(column) => set(i, { column })}
-            options={columns.map((col) => ({ value: col, label: col }))}
-            aria-label={t('field_column')}
+            value={c.column || undefined}
+            options={columns}
+            onChange={(column) => set(i, { column: column ?? '' })}
           />
-          <Select
-            size="small"
-            style={{ minWidth: 150 }}
-            value={c.op}
-            onChange={(op) => set(i, { op })}
-            options={CONDITION_OPS.map((op) => ({ value: op, label: t(`op_${op}`) }))}
+          <NativeSelect
+            className="w-40"
             aria-label={t('field_condition')}
-          />
-          {NO_VALUE.has(c.op) ? null : (
+            value={c.op}
+            onChange={(e) => set(i, { op: e.target.value })}
+          >
+            {CONDITION_OPS.map((op) => (
+              <NativeSelectOption key={op} value={op}>
+                {t(`op_${op}`)}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          {!NO_VALUE.has(c.op) && (
             <Input
-              size="small"
-              style={{ width: 160 }}
-              value={c.value}
-              placeholder={c.op === 'in_list' ? t('placeholder_in_list') : c.op === 'matches' ? t('placeholder_regex') : t('placeholder_value')}
+              className="h-8 w-40"
+              value={c.value ?? ''}
+              placeholder={
+                c.op === 'in_list'
+                  ? t('placeholder_in_list')
+                  : c.op === 'matches'
+                    ? t('placeholder_regex')
+                    : t('placeholder_value')
+              }
               onChange={(e) => set(i, { value: e.target.value })}
               aria-label={t('field_value')}
             />
           )}
-          {c.op === 'between' ? (
+          {c.op === 'between' && (
             <Input
-              size="small"
-              style={{ width: 140 }}
-              value={c.value2}
+              className="h-8 w-36"
+              value={c.value2 ?? ''}
               placeholder={t('placeholder_and')}
               onChange={(e) => set(i, { value2: e.target.value })}
               aria-label={t('field_value')}
             />
-          ) : null}
+          )}
           <Button
-            size="small"
-            type="text"
-            icon={<DeleteOutlined />}
+            size="icon-sm"
+            variant="ghost"
             aria-label={t('remove_condition')}
-            onClick={() => onChange(value.filter((_, idx) => idx !== i))}
             disabled={value.length === 1}
-          />
-        </Space>
+            onClick={() => onChange(value.filter((_, idx) => idx !== i))}
+          >
+            <Trash2 />
+          </Button>
+        </div>
       ))}
-      <Button size="small" icon={<PlusOutlined />} onClick={() => onChange([...value, { column: columns[0] ?? '', op: 'equals' }])}>
-        {t('add_condition')}
+      <Button
+        size="sm"
+        variant="outline"
+        className="self-start"
+        onClick={() => onChange([...value, { column: columns[0] ?? '', op: 'equals' }])}
+      >
+        <Plus /> {t('add_condition')}
       </Button>
-    </Space>
+    </div>
   );
 }
-
-export const conditionsComplete = (conds: Condition[]) =>
-  conds.length > 0 &&
-  conds.every((c) => c.column && c.op && (NO_VALUE.has(c.op) || (c.value ?? '').trim() !== '') && (c.op !== 'between' || (c.value2 ?? '').trim() !== ''));

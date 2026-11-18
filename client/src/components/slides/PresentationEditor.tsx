@@ -75,11 +75,14 @@ import {
   type ShapeKind,
   type Slide,
   type SlideElement,
+  type SlideFooter,
   type TextStyle,
 } from '@/lib/slides/model';
+import { slideFooter } from '@/lib/slides/footer';
 import { presentationToPptx } from '@/lib/slides/toPptx';
 import { cn } from '@/lib/ui/utils';
 import { PresentMode } from './PresentMode';
+import { SlideFooterDialog } from './SlideFooterDialog';
 import { SlideCanvas } from './SlideCanvas';
 import { SlideView } from './SlideView';
 
@@ -160,6 +163,7 @@ function LoadedEditor({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [presenting, setPresenting] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [footerOpen, setFooterOpen] = useState(false);
   const clipboardRef = useRef<SlideElement | null>(null);
   const historyRef = useRef(history);
 
@@ -429,6 +433,9 @@ function LoadedEditor({
           </>
         }
       >
+        <Button size="sm" variant="outline" onClick={() => setFooterOpen(true)}>
+          Header &amp; footer
+        </Button>
         <Button size="sm" variant="outline" onClick={() => void exportPptx()} disabled={exporting}>
           {exporting ? <Loader2 className="animate-spin" /> : <Download />} Export .pptx
         </Button>
@@ -653,6 +660,7 @@ function LoadedEditor({
         <SlideList
           slides={body.slides}
           theme={theme}
+          footer={body.footer}
           currentId={slide.id}
           onSelect={(id) => {
             setCurrentId(id);
@@ -668,6 +676,7 @@ function LoadedEditor({
           <SlideCanvas
             slide={slide}
             theme={theme}
+            footer={slideFooter(body.footer, slide, index)}
             selectedId={selectedId}
             editingId={editingId}
             onSelect={(id) => {
@@ -702,10 +711,19 @@ function LoadedEditor({
         </div>
       </div>
 
+      <SlideFooterDialog
+        open={footerOpen}
+        footer={body.footer}
+        readOnly={readOnly}
+        onOpenChange={setFooterOpen}
+        onChange={(footer, merge) => update((b) => ({ ...b, footer }), merge)}
+      />
+
       {presenting !== null && (
         <PresentMode
           slides={body.slides}
           theme={theme}
+          footer={body.footer}
           fileId={presentationId}
           start={presenting}
           onExit={(at) => {
@@ -722,6 +740,7 @@ function LoadedEditor({
 function SlideList({
   slides,
   theme,
+  footer,
   currentId,
   onSelect,
   onMove,
@@ -731,6 +750,7 @@ function SlideList({
 }: Readonly<{
   slides: Slide[];
   theme: ReturnType<typeof themeById>;
+  footer: SlideFooter | undefined;
   currentId: string;
   onSelect: (id: string) => void;
   onMove: (from: number, to: number) => void;
@@ -781,7 +801,13 @@ function SlideList({
               )}
               onClick={() => onSelect(s.id)}
             >
-              <SlideView slide={s} theme={theme} scale={160 / SLIDE_WIDTH} className="pointer-events-none" />
+              <SlideView
+                slide={s}
+                theme={theme}
+                scale={160 / SLIDE_WIDTH}
+                footer={slideFooter(footer, s, i)}
+                className="pointer-events-none"
+              />
             </button>
           </li>
         ))}

@@ -64,6 +64,14 @@ def test_change_case_and_fill_strategies():
     assert filled[1]["code"] == " KH-001 "
 
 
+def test_fill_treats_blank_text_as_empty_and_keeps_number_types():
+    # The grid shows '' as "empty", so Fill empty cells must fill it too
+    blank = [{"replace": {"columns": ["code"], "find": "KH-002", "replace_with": "", "match": "whole"}}]
+    assert rows(blank + [{"fill": {"columns": ["code"], "strategy": "value", "value": "Unknown"}}])[1]["code"] == "Unknown"
+    assert rows(blank + [{"fill": {"columns": ["code"], "strategy": "down"}}])[1]["code"] == " KH-001 "
+    assert [r["id"] for r in rows([{"fill": {"columns": ["id"], "strategy": "value", "value": 0}}])] == [1, 2, 3, 4]
+
+
 def test_filter_rows_builder():
     keep = rows([{"filter_rows": {"conditions": [{"column": "status", "op": "equals", "value": "paid"}]}}])
     assert len(keep) == 3

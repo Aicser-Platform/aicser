@@ -96,7 +96,8 @@ export type ProfileResult = {
 
 export type SampleOptions = { sample_mode?: SampleMode; sample_rows?: number };
 
-export type ColumnRole = 'amount' | 'count' | 'category' | 'date' | 'id' | 'text';
+export const COLUMN_ROLES = ['amount', 'count', 'category', 'date', 'id', 'text'] as const;
+export type ColumnRole = (typeof COLUMN_ROLES)[number];
 /** What an output column means, set in Prepare and written onto the table the recipe makes. */
 export type ColumnMeaning = { description?: string | null; role?: ColumnRole | null; personal?: boolean };
 
@@ -214,10 +215,73 @@ export type RecipeImpact = {
 
 export const getRecipeImpact = (id: string) => fetchApi<RecipeImpact>(`/api/prep/recipes/${encodeURIComponent(id)}/impact`);
 
+/** Runs the recipe on the whole table and puts the result in its source's clean copy (one connection per source). */
 export const saveRecipeAsTable = (id: string, name?: string) =>
-  post<{ data_source_id: string; name: string; rows: number; columns: number; truncated: boolean }>(
-    `/api/prep/recipes/${encodeURIComponent(id)}/save-as-table`,
-    { name: name || null },
+  post<{
+    data_source_id: string;
+    name: string;
+    table: string;
+    rows: number;
+    columns: number;
+    truncated: boolean;
+    tables: number;
+  }>(`/api/prep/recipes/${encodeURIComponent(id)}/save-as-table`, { name: name || null });
+
+/** What the clean copy holds for one table. */
+export type SavedTable = {
+  recipe_id?: string | null;
+  recipe_version?: number | null;
+  rows?: number;
+  as_is?: boolean;
+  truncated?: boolean;
+  saved_at?: string;
+};
+
+export type SourceTable = {
+  name: string;
+  rows?: number | null;
+  columns?: number | null;
+  clean_name: string;
+  recipe: { id: string; name: string; status: Recipe['status']; version: number; steps: number; updated_at?: string | null } | null;
+  other_recipes: number;
+  saved: SavedTable | null;
+  outdated: boolean;
+};
+
+export type CleanCopyRef = { id: string; name: string; updated_at?: string | null };
+
+export type SourceOverview = {
+  source: { id: string; name?: string | null; type?: string | null; db_type?: string | null; prepared_from?: string | null };
+  tables: SourceTable[];
+  clean_copy: CleanCopyRef | null;
+};
+
+export const getSourceOverview = (dataSourceId: string, projectId?: string | null) =>
+  fetchApi<SourceOverview>(withProject(`/api/prep/sources/${encodeURIComponent(dataSourceId)}/overview`, projectId));
+
+export type SaveAllResult = {
+  clean_copy: { id: string; name: string } | null;
+  tables: {
+    table: string;
+    status: 'cleaned' | 'copied' | 'skipped' | 'error';
+    rows?: number;
+    truncated?: boolean;
+    reason?: 'draft' | 'no_recipe';
+    message?: string;
+  }[];
+};
+
+export const saveSourceToCleanCopy = (
+  dataSourceId: string,
+  body: { include_unprepared: boolean; tables?: string[] | null },
+  projectId?: string | null,
+) => post<SaveAllResult>(withProject(`/api/prep/sources/${encodeURIComponent(dataSourceId)}/save-all`, projectId), body);
+
+export type CleanCopy = CleanCopyRef & { source_id?: string | null; tables: Record<string, SavedTable> };
+
+export const listCleanCopies = (projectId?: string | null) =>
+  fetchApi<{ clean_copies: CleanCopy[] }>(withProject('/api/prep/clean-copies', projectId)).then(
+    (r) => r.clean_copies ?? [],
   );
 
 /** The step's kind and its settings, from the single-key form. */
@@ -225,3 +289,13 @@ export const stepParts = (step: PrepStep): [string, Record<string, unknown>] => 
   const kind = Object.keys(step)[0] ?? '';
   return [kind, (step[kind] as Record<string, unknown>) ?? {}];
 };
+
+/** Tables of a source as the source has them (before any pipeline): `schema.table` outside the default schema. */
+export async function listSourceTables(dataSourceId: string): Promise<string[]> {
+  const res = await fetchApi<{ schema?: { tables?: { name: string; schema?: string | null }[] } | null }>(
+    `/data/sources/${encodeURIComponent(dataSourceId)}/schema?origin=source`,
+  );
+  return (res?.schema?.tables ?? []).map((t) =>
+    t.schema && !['public', 'main'].includes(t.schema) ? `${t.schema}.${t.name}` : t.name,
+  );
+}

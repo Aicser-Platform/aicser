@@ -3,17 +3,22 @@ import {
   BorderStyle,
   Document,
   ExternalHyperlink,
+  Footer,
+  Header,
   HeadingLevel,
   ImageRun,
   LevelFormat,
   Packer,
   PageBreak,
+  PageNumber,
   PageOrientation,
   Paragraph,
   ShadingType,
+  Tab,
   Table,
   TableCell,
   TableRow,
+  TabStopType,
   TextRun,
   WidthType,
   type IParagraphOptions,
@@ -24,6 +29,7 @@ import type { JSONContent } from '@tiptap/react';
 import { OFFICE_FONTS } from '@/lib/office/fonts';
 import { isDataImage, isSafeLink } from './extensions';
 import { PAGE_MARGINS, pageDimensions, type PageSetup } from './model';
+import { pageBands, SLOTS, type Band } from './pageElements';
 
 // Docs document (TipTap JSON) → Word .docx, written in the browser with `docx`. Everything the editor makes maps
 // to Word: headings, fonts, sizes, colours, highlight, alignment, lists, checklists, tables, images, links, quotes,
@@ -385,6 +391,54 @@ async function table(node: JSONContent, ctx: Context): Promise<Table> {
   return new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } });
 }
 
+/**
+ * A header or footer line: left, centre and right slots on one paragraph with a centre and a right tab stop (as
+ * Word's own header style). Page numbers are Word fields, so Word counts the pages itself.
+ */
+function bandParagraph(band: Band, widthTwips: number): Paragraph {
+  const children: ParagraphChild[] = [];
+  const run = { size: 20, color: '595959' };
+  SLOTS.forEach((slot, i) => {
+    if (i > 0) children.push(new TextRun({ ...run, children: [new Tab()] }));
+    band[slot].forEach((item, j) => {
+      if (j > 0) children.push(new TextRun({ ...run, text: '   ' }));
+      if (item.kind === 'text') children.push(new TextRun({ ...run, text: item.text }));
+      else if (item.style === 'pageOf')
+        children.push(new TextRun({ ...run, children: ['Page ', PageNumber.CURRENT, ' of ', PageNumber.TOTAL_PAGES] }));
+      else children.push(new TextRun({ ...run, children: [PageNumber.CURRENT] }));
+    });
+  });
+  return new Paragraph({
+    children,
+    tabStops: [
+      { type: TabStopType.CENTER, position: Math.round(widthTwips / 2) },
+      { type: TabStopType.RIGHT, position: widthTwips },
+    ],
+  });
+}
+
+/** The section's headers and footers for the page setup (an empty first page one for "different first page"). */
+function pageElements(page: PageSetup, widthTwips: number) {
+  const { header, footer } = pageBands(page);
+  const blank = () => [new Paragraph({ children: [] })];
+  const first = page.differentFirstPage === true;
+  return {
+    titlePage: first && (header !== null || footer !== null),
+    headers: header
+      ? {
+          default: new Header({ children: [bandParagraph(header, widthTwips)] }),
+          ...(first ? { first: new Header({ children: blank() }) } : {}),
+        }
+      : undefined,
+    footers: footer
+      ? {
+          default: new Footer({ children: [bandParagraph(footer, widthTwips)] }),
+          ...(first ? { first: new Footer({ children: blank() }) } : {}),
+        }
+      : undefined,
+  };
+}
+
 const ORDERED_FORMATS = [LevelFormat.DECIMAL, LevelFormat.LOWER_LETTER, LevelFormat.LOWER_ROMAN];
 
 /** A document as .docx bytes. */
@@ -394,6 +448,7 @@ export async function documentToDocx(title: string, content: JSONContent, page: 
   const ctx: Context = { contentWidthPx: (widthMm - 2 * marginMm) * PX_PER_MM, nextList: 1 };
   const children = await blocks(content.content, ctx);
   const margin = Math.round(marginMm * TWIPS_PER_MM);
+  const elements = pageElements(page, Math.round((widthMm - 2 * marginMm) * TWIPS_PER_MM));
   const doc = new Document({
     title,
     creator: 'Aicser',
@@ -422,9 +477,20 @@ export async function documentToDocx(title: string, content: JSONContent, page: 
               height: Math.round(Math.max(widthMm, heightMm) * TWIPS_PER_MM),
               orientation: page.orientation === 'landscape' ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
             },
-            margin: { top: margin, right: margin, bottom: margin, left: margin },
+            // Header and footer sit in the middle of the top and bottom margins, as in the editor.
+            margin: {
+              top: margin,
+              right: margin,
+              bottom: margin,
+              left: margin,
+              header: Math.round(margin / 2),
+              footer: Math.round(margin / 2),
+            },
           },
+          titlePage: elements.titlePage,
         },
+        headers: elements.headers,
+        footers: elements.footers,
         children: children.length ? children : [new Paragraph({ children: [] })],
       },
     ],

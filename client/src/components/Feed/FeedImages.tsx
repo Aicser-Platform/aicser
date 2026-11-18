@@ -1,25 +1,24 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Image, Skeleton } from 'antd';
 import { useTranslations } from 'next-intl';
+import { Dialog, DialogContent, DialogTitle } from '@/components/aicser-ui/dialog';
+import { AicserUi } from '@/components/aicser-ui/scope';
+import { Skeleton } from '@/components/aicser-ui/skeleton';
+import { cn } from '@/lib/ui/utils';
 import { fetchApiBlob } from '@/utils/api';
 import type { FeedImage } from '@/services/socialFeedService';
 
-/**
- * One feed image. Images are served by an authorised endpoint (the post's own visibility),
- * and auth is a bearer token, so a plain <img src> can't load them — fetch as a blob instead.
- */
-export function FeedImageView({ image, height }: { image: FeedImage; height?: number }) {
-  const t = useTranslations('feed_page');
+/** Loads an image from the authorised endpoint: auth is a bearer token, so a plain <img src> can't load it. */
+function useImageBlob(url: string) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
-
   useEffect(() => {
     let revoked = false;
     let objectUrl: string | null = null;
     setFailed(false);
-    fetchApiBlob(image.url)
+    setSrc(null);
+    fetchApiBlob(url)
       .then(({ blob }) => {
         if (revoked) return;
         objectUrl = URL.createObjectURL(blob);
@@ -30,27 +29,55 @@ export function FeedImageView({ image, height }: { image: FeedImage; height?: nu
       revoked = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [image.url]);
+  }, [url]);
+  return { src, failed };
+}
 
+/** One feed image; clicking it opens it full size. */
+export function FeedImageView({ image, height }: { image: FeedImage; height?: number }) {
+  const t = useTranslations('feed_page');
+  const { src, failed } = useImageBlob(image.url);
+  const [open, setOpen] = useState(false);
   const ratio = image.width && image.height ? `${image.width} / ${image.height}` : '16 / 9';
-  if (failed) {
-    return <div className="feed-image feed-image--failed">{t('image_unavailable')}</div>;
-  }
-  if (!src) {
-    return (
-      <div className="feed-image" style={{ aspectRatio: ratio, height }}>
-        <Skeleton.Image active style={{ width: '100%', height: '100%' }} />
-      </div>
-    );
-  }
+  const alt = image.alt || t('image_alt_default');
+
   return (
-    <Image
-      src={src}
-      alt={image.alt || t('image_alt_default')}
-      className="feed-image"
-      style={{ objectFit: 'cover', width: '100%', height: height ?? '100%' }}
-      rootClassName="feed-image-root"
-    />
+    <AicserUi>
+      {failed ? (
+        <div
+          className="feed-image feed-image--failed flex items-center justify-center bg-muted p-4 text-xs text-muted-foreground"
+          style={{ aspectRatio: ratio, height }}
+        >
+          {t('image_unavailable')}
+        </div>
+      ) : !src ? (
+        <Skeleton className="feed-image w-full rounded-none" style={{ aspectRatio: ratio, height }} />
+      ) : (
+        <>
+          <button
+            type="button"
+            className="block w-full cursor-zoom-in border-0 bg-transparent p-0"
+            onClick={() => setOpen(true)}
+            aria-label={alt}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- a blob: URL from an authorised fetch */}
+            <img
+              src={src}
+              alt={alt}
+              className="feed-image block w-full object-cover"
+              style={{ height: height ?? '100%' }}
+            />
+          </button>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogContent className="max-w-[min(96vw,1200px)] p-2 sm:max-w-[min(96vw,1200px)]">
+              <DialogTitle className="sr-only">{alt}</DialogTitle>
+              {/* eslint-disable-next-line @next/next/no-img-element -- a blob: URL from an authorised fetch */}
+              <img src={src} alt={alt} className="max-h-[85vh] w-full rounded-lg object-contain" />
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+    </AicserUi>
   );
 }
 
@@ -59,22 +86,15 @@ export function FeedImages({ images, compact = false }: { images?: FeedImage[]; 
   if (!images?.length) return null;
   const single = images.length === 1;
   return (
-    <Image.PreviewGroup>
-      <div
-        className={compact ? 'px-3 pb-2' : 'px-4 pb-3'}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: single ? '1fr' : '1fr 1fr',
-          gap: 6,
-        }}
-      >
+    <AicserUi>
+      <div className={cn('grid gap-1.5', single ? 'grid-cols-1' : 'grid-cols-2', compact ? 'px-4 pb-2' : 'px-4 pb-3')}>
         {images.map((img) => (
-          <div key={img.id} style={{ borderRadius: 8, overflow: 'hidden', maxHeight: single ? 420 : 220 }}>
+          <div key={img.id} className="overflow-hidden rounded-lg" style={{ maxHeight: single ? 420 : 220 }}>
             <FeedImageView image={img} height={single ? undefined : 220} />
           </div>
         ))}
       </div>
-    </Image.PreviewGroup>
+    </AicserUi>
   );
 }
 

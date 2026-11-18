@@ -4,10 +4,15 @@ import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-librar
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/messages/en.json';
 import { CleanPanel } from '../CleanPanel';
+import { PrepI18n } from '@/lib/prep/i18n';
 import type { CleaningLog, Finding } from '@/api/prep';
 
 const render = (ui: React.ReactElement) =>
-  rtlRender(<NextIntlClientProvider locale="en" messages={enMessages} timeZone="UTC">{ui}</NextIntlClientProvider>);
+  rtlRender(
+    <NextIntlClientProvider locale="en" messages={enMessages} timeZone="UTC">
+      <PrepI18n>{ui}</PrepI18n>
+    </NextIntlClientProvider>,
+  );
 
 const fix: Finding = {
   code: 'whitespace', severity: 'info', column: 'name', message_key: 'prepare.finding.whitespace',
@@ -42,7 +47,12 @@ function panel(props: Partial<React.ComponentProps<typeof CleanPanel>> = {}) {
   );
 }
 
-const stage = (letter: string) => fireEvent.click(screen.getByText(letter, { selector: '.clean-panel__letter' }));
+/** The CLEAN stage tabs are named by their full stage name (C · L · E · A · N on screen). */
+const STAGE_KEY: Record<string, string> = { C: 'stage_c', L: 'stage_l', E: 'stage_e', A: 'stage_a', N: 'stage_n' };
+const stage = (letter: string) =>
+  fireEvent.click(
+    screen.getByRole('tab', { name: (enMessages as { prepare: { clean: Record<string, string> } }).prepare.clean[STAGE_KEY[letter]] }),
+  );
 
 describe('CleanPanel', () => {
   it('describes the data first: rows, columns and each column’s shape', () => {
@@ -74,9 +84,13 @@ describe('CleanPanel', () => {
     await waitFor(() => expect(onCleaningChange).toHaveBeenCalled());
     expect(saved.decisions).toEqual({ 'outliers:amount': { action: 'keep', reason: 'Bulk order, real' } });
 
-    rerender(<NextIntlClientProvider locale="en" messages={enMessages} timeZone="UTC">{panel({ onCleaningChange, cleaning: saved })}</NextIntlClientProvider>);
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages} timeZone="UTC">
+        <PrepI18n>{panel({ onCleaningChange, cleaning: saved })}</PrepI18n>
+      </NextIntlClientProvider>,
+    );
     stage('N');
-    const report = document.querySelector('.clean-panel__report')!.textContent!;
+    const report = document.querySelector('pre')!.textContent!;
     expect(report).toContain('1. Trim name');
     expect(report).toContain('- outliers in amount: **Kept** (Bulk order, real)');
   });
