@@ -60,3 +60,16 @@ def health_score(profile: AssetProfile) -> int:
         score -= PENALTIES["no_unique_column"]
 
     return max(0, score)
+
+
+# Each open issue in the CLEAN panel (duplicate rows, dates stored as text, mixed spellings…)
+# costs this much, so fixing one visibly raises the score.
+FINDING_PENALTIES = {"error": 10, "warning": 5, "info": 1}
+
+
+def health_with_findings(profile: AssetProfile, findings) -> int:
+    """``health_score`` minus the open findings' penalties, floored at 0."""
+    score = health_score(profile)
+    for finding in findings or []:
+        score -= FINDING_PENALTIES.get(str(finding.get("severity") or ""), 0)
+    return max(0, score)

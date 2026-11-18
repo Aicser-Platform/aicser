@@ -122,3 +122,49 @@ def test_lakehouse_is_multi_table_not_a_file_upload():
     assert not is_file_upload_duckdb("lakehouse_iceberg")
     assert not is_single_table_source("lakehouse_iceberg", "duckdb")
     assert not needs_schema_qualification("duckdb", "lakehouse_iceberg")
+
+
+def _workbook():
+    return {
+        "type": "file",
+        "schema": {
+            "duckdb_tables": {"customers": "sheet_0_customers", "orders": "sheet_2_orders"},
+            "tables": [{"name": "customers"}, {"name": "orders"}],
+        },
+    }
+
+
+def test_column_security_alias_keeps_its_qualifiers():
+    """CLS output aliases the table to its own name; renaming the qualifiers
+    with the table left them pointing at nothing (DuckDB Binder Error)."""
+    sql = (
+        'SELECT "customers"."customer_id" AS "customer_id", \'***MASKED***\' AS "email" '
+        'FROM "customers" AS "customers" LIMIT 100'
+    )
+    rewritten, error, _ = rewrite_file_duckdb_table_refs(sql, _workbook())
+    assert error is None
+    assert rewritten == (
+        'SELECT "customers"."customer_id" AS "customer_id", \'***MASKED***\' AS "email" '
+        'FROM "sheet_0_customers" AS "customers" LIMIT 100'
+    )
+
+
+def test_row_security_subquery_alias_keeps_its_qualifiers():
+    sql = (
+        "SELECT customers.city FROM (SELECT * FROM customers WHERE country = 'US') AS customers "
+        "JOIN orders ON orders.customer_id = customers.customer_id"
+    )
+    rewritten, error, _ = rewrite_file_duckdb_table_refs(sql, _workbook())
+    assert error is None
+    assert rewritten == (
+        "SELECT customers.city FROM (SELECT * FROM \"sheet_0_customers\" WHERE country = 'US') AS customers "
+        'JOIN "sheet_2_orders" ON "sheet_2_orders".customer_id = customers.customer_id'
+    )
+
+
+def test_unaliased_qualifiers_still_follow_the_table():
+    sql = "SELECT SUM(orders.amount) FROM orders WHERE orders.status = 'paid'"
+    rewritten, _, _ = rewrite_file_duckdb_table_refs(sql, _workbook())
+    assert rewritten == (
+        'SELECT SUM("sheet_2_orders".amount) FROM "sheet_2_orders" WHERE "sheet_2_orders".status = \'paid\''
+    )

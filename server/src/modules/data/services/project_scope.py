@@ -55,11 +55,12 @@ async def ensure_source_in_project(db: Any, data_source_id: Any, project_id: Any
 
 
 async def _shared_into_project(db: Any, data_source_id: Any, project_id: Any) -> bool:
-    """A source added to another project (project_data_source) belongs to that project too; the
-    project's source list shows it, so charts there may use it."""
+    """A source added to another project (project_data_source), or granted to it from the source's
+    Access tab, belongs to that project too; the project's source list shows it, so charts and chat
+    there may use it. What each person may read is still decided by their grants and row/column rules."""
     from sqlalchemy import select
 
-    from src.modules.data.models import ProjectDataSource
+    from src.modules.data.models import DataSourceAccessGrant, ProjectDataSource
 
     link = (
         await db.execute(
@@ -70,4 +71,19 @@ async def _shared_into_project(db: Any, data_source_id: Any, project_id: Any) ->
             )
         )
     ).scalar_one_or_none()
-    return link is not None
+    if link is not None:
+        return True
+    grant = (
+        await db.execute(
+            select(DataSourceAccessGrant.id)
+            .where(
+                DataSourceAccessGrant.data_source_id == str(data_source_id),
+                DataSourceAccessGrant.grantee_type == "project",
+                DataSourceAccessGrant.grantee_id == str(project_id),
+                DataSourceAccessGrant.is_active.is_(True),
+                DataSourceAccessGrant.is_deleted.is_(False),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return grant is not None

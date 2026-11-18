@@ -128,6 +128,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // Readable label color for anything filled with primaryColor (buttons,
     // selected menu item, tags) - adapts to brand overrides instead of
     // assuming white always works (the default teal fails white at ~2.2:1).
+    /** The brand colour at an opacity (dark-mode fills: they let the dark surface through). */
+    const primaryAlpha = (alpha: number) => {
+        const rgb = hexToRgb(primaryColor);
+        return rgb ? `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})` : primaryColorOutline;
+    };
+    const darkPrimaryTintTokens = {
+        colorPrimaryBg: primaryAlpha(0.16),
+        colorPrimaryBgHover: primaryAlpha(0.24),
+        colorPrimaryBorder: primaryAlpha(0.45),
+        colorPrimaryBorderHover: primaryAlpha(0.6),
+    };
+
     const primaryColorText = useMemo(
         () => pickReadableTextColor(primaryColor, '#0d1117', '#ffffff'),
         [primaryColor]
@@ -261,7 +273,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             '--ant-color-primary-active': primaryColorActive,
             '--color-primary-active': primaryColorActive,
             '--ant-primary-color-active': primaryColorActive, // Ant Design alias
-            '--ant-color-primary-bg': primaryShades.tints?.bg ?? primaryColorOutline,
+            // Light: the brand's own pale tint. Dark: the brand at low opacity over the dark surface. The light tint
+            // used to be set in both modes, so every highlighted row and chip in dark mode put light text on a pale
+            // background (unreadable).
+            '--ant-color-primary-bg': isDarkMode ? primaryAlpha(0.16) : primaryShades.tints?.bg ?? primaryColorOutline,
             '--ant-primary-color-outline': primaryColorOutline,
             // Readable label color for anything filled with primaryColor - for
             // CSS files that can't do antd's colorTextLightSolid token merge
@@ -332,7 +347,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         // teal measured ~2.2:1, failing WCAG AA; adapts per the
                         // actual resolved primary color instead of assuming white.
                         colorTextLightSolid: primaryColorText,
-                        ...primaryTintTokens(primaryShades),
+                        // Light-mode tints only: in dark mode antd's dark algorithm derives dark fills from the seed.
+                        ...(isDarkMode ? darkPrimaryTintTokens : primaryTintTokens(primaryShades)),
                         ...primaryLinkTokens(primaryShades, isDarkMode),
                         colorSuccess: '#16a34a',
                         colorWarning: '#f97316',
@@ -382,10 +398,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         borderRadiusSM: 6,
                         borderRadiusLG: 14,
 
-                        // Control heights
+                        // Control heights: Aicser UI's h-8 / h-9 / h-7 (shared with the Tailwind components)
                         controlHeight: 32,
-                        controlHeightLG: 40,
-                        controlHeightSM: 24,
+                        controlHeightLG: 36,
+                        controlHeightSM: 28,
 
                         // Motion
                         motionDurationSlow: '0.3s',
@@ -476,7 +492,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         Table: {
                             // Tables use container color
                             colorBgContainer: isDarkMode ? '#161b22' : LIGHT.surface, // 2. Container
-                            headerBg: isDarkMode ? '#1c2128' : LIGHT.subtle, // 3. Elevated (header)
+                            // Aicser UI tables: no header band, medium-weight header text, hairline rows
+                            headerBg: isDarkMode ? '#161b22' : LIGHT.surface,
+                            headerSplitColor: 'transparent',
+                            headerColor: isDarkMode ? '#e6edf3' : '#24292f',
                             borderColor: isDarkMode ? '#67717d' : LIGHT.edge, // 5. Border
                         },
                         Form: {
@@ -484,11 +503,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             colorBgContainer: isDarkMode ? '#161b22' : LIGHT.surface, // 2. Container
                         },
                         Button: {
+                            // Aicser UI buttons: h-8 / h-9 / h-7, rounded-lg (--ui-radius)
                             controlHeight: 32,
-                            controlHeightLG: 40,
-                            controlHeightSM: 24,
+                            controlHeightLG: 36,
+                            controlHeightSM: 28,
                             fontWeight: 500,
-                            borderRadius: 6,
+                            borderRadius: 10,
+                            borderRadiusSM: 8,
+                            borderRadiusLG: 10,
                             // Flat shadcn look: no drop shadow on any button variant
                             primaryShadow: 'none',
                             defaultShadow: 'none',
@@ -504,8 +526,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         },
                         Input: {
                             controlHeight: 32,
-                            controlHeightLG: 40,
-                            controlHeightSM: 24,
+                            controlHeightLG: 36,
+                            controlHeightSM: 28,
                             colorBgContainer: isDarkMode ? '#161b22' : LIGHT.surface, // 2. Container
                             // Deliberately stronger than the sitewide colorBorder
                             // (~1.2:1/1.4:1 against this same container color in
@@ -517,18 +539,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             // which would visibly darken every card/table/divider
                             // site-wide.
                             colorBorder: isDarkMode ? '#67717d' : LIGHT.control,
-                            borderRadius: 6,
+                            borderRadius: 10,
+                            borderRadiusSM: 8,
+                            borderRadiusLG: 10,
                             activeShadow: 'none',
                             hoverBorderColor: primaryColor,
                             activeBorderColor: primaryColor,
                         },
                         Select: {
                             controlHeight: 32,
-                            controlHeightLG: 40,
-                            controlHeightSM: 24,
+                            controlHeightLG: 36,
+                            controlHeightSM: 28,
                             colorBgContainer: isDarkMode ? '#161b22' : LIGHT.surface, // 2. Container
                             colorBorder: isDarkMode ? '#67717d' : LIGHT.control, // see Input above
-                            borderRadius: 6,
+                            borderRadius: 10,
+                            borderRadiusSM: 8,
+                            borderRadiusLG: 10,
                             // Input (above) sets these explicitly so hover/focus reads as the
                             // brand color rather than antd's derived default - Select lacked
                             // the same pair, so a Select sitting next to an Input in the same
@@ -569,7 +595,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             railSize: 6,
                         },
                         ColorPicker: {
-                            borderRadius: 6,
+                            borderRadius: 10,
                         },
                         Dropdown: {
                             // Dropdowns use elevated color
@@ -580,10 +606,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             // Modals use elevated color
                             colorBgElevated: isDarkMode ? '#1c2128' : LIGHT.surface, // 3. Elevated
                             colorBorder: isDarkMode ? '#67717d' : LIGHT.edge, // 5. Border
-                            borderRadiusLG: 12,
+                            borderRadiusLG: 14, // Aicser UI dialogs: rounded-xl
                         },
                         Alert: {
-                            borderRadiusLG: 8,
+                            borderRadiusLG: 10,
+                        },
+                        Segmented: {
+                            // Aicser UI's segmented control: a bordered track, the chosen one filled
+                            borderRadius: 10,
+                            borderRadiusSM: 8,
+                            trackBg: isDarkMode ? '#0d1117' : LIGHT.canvas,
+                            itemSelectedBg: isDarkMode ? '#1c2432' : '#dfe4ec',
+                        },
+                        Tabs: {
+                            inkBarColor: primaryColor,
+                            itemSelectedColor: isDarkMode ? '#e6edf3' : '#24292f',
+                            itemHoverColor: isDarkMode ? '#e6edf3' : '#24292f',
+                            itemColor: isDarkMode ? '#8b949e' : '#57606a',
                         },
                         List: {
                             // Plain lists: row spacing only. Bordered lists keep antd's own inset

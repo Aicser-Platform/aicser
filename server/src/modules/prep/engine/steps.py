@@ -1109,7 +1109,9 @@ class FillStep(Step):
             raise ValueError("fill with a value needs the value")
 
     def _expr(self, c: str) -> str:
-        col = quote_ident(c)
+        # Blank text shows as "empty" in the grid, so it is filled like a missing value
+        # (a number or date column is never blank, so its type is untouched).
+        col = f"(CASE WHEN trim(CAST({quote_ident(c)} AS VARCHAR)) = '' THEN NULL ELSE {quote_ident(c)} END)"
         if self.strategy == "value":
             v = self.value
             lit = str(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else _sql_str(v)

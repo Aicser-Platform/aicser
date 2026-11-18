@@ -2,20 +2,33 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Dropdown, Input, Modal, Tag, message, Alert } from 'antd';
 import {
-  ArrowUpOutlined,
-  BulbOutlined,
-  CompassOutlined,
-  DashboardOutlined,
-  DownOutlined,
-  FireOutlined,
-  MessageOutlined,
-  ShareAltOutlined,
-  TeamOutlined,
-  UserAddOutlined,
-  ArrowDownOutlined,
-} from '@ant-design/icons';
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  Compass,
+  Flame,
+  Info,
+  LayoutDashboard,
+  Lightbulb,
+  Loader2,
+  MessageCircleMore,
+  Share2,
+  UserPlus,
+  Users,
+} from 'lucide-react';
+import { Badge } from '@/components/aicser-ui/badge';
+import { Button } from '@/components/aicser-ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/aicser-ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/aicser-ui/dropdown-menu';
+import { Textarea } from '@/components/aicser-ui/textarea';
+import { cn } from '@/lib/ui/utils';
+import { message } from '@/lib/ui/toast';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -60,6 +73,7 @@ const FEED_SKELETON_APPEND_COUNT = 2;
 
 const SocialFeedPage: React.FC = () => {
   const t = useTranslations('feed_page');
+  const tCommon = useTranslations('common');
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -148,8 +162,12 @@ const SocialFeedPage: React.FC = () => {
     handleUpdatePost,
   } = useFeedInteractions(items, useFeedItemsCacheSetter(requestFilters), { onSidebarRefresh: refreshSidebar });
 
-  const { approvalQueue, canModerateApprovals, accessResolved: approvalAccessResolved, isLoading: loadingApprovals } =
-    useApprovalQueueQuery({ enabled: SHOW_FEED_APPROVALS_UI });
+  const {
+    approvalQueue,
+    canModerateApprovals,
+    accessResolved: approvalAccessResolved,
+    isLoading: loadingApprovals,
+  } = useApprovalQueueQuery({ enabled: SHOW_FEED_APPROVALS_UI });
   const approveMutation = useApprovePublicationMutation();
   const rejectMutation = useRejectPublicationMutation();
 
@@ -503,296 +521,272 @@ const SocialFeedPage: React.FC = () => {
     return items;
   }, [items, streamView]);
 
+  const exploreActions: { key: string; icon: React.ReactNode; label: string; run: () => void }[] = [
+    { key: 'discover', icon: <Compass />, label: t('discover'), run: () => setDiscoveryOpen(true) },
+    {
+      key: 'trending',
+      icon: <Flame />,
+      label: t('explore_chip_trending'),
+      run: () => setFilters({ ...filters, sort: 'trending', scope: defaultScope }),
+    },
+    {
+      key: 'team',
+      icon: <Users />,
+      label: t('explore_chip_team'),
+      run: () => setFilters({ ...filters, scope: defaultScope, sort: 'recommended' }),
+    },
+    {
+      key: 'learn',
+      icon: <Lightbulb />,
+      label: t('explore_chip_learn'),
+      run: () => router.push(getChatHref({ prompt: t('explore_prompt_learn') })),
+    },
+    {
+      key: 'build_dashboard',
+      icon: <LayoutDashboard />,
+      label: t('build_dashboard'),
+      run: () => router.push('/dashboards'),
+    },
+    { key: 'share', icon: <Share2 />, label: t('explore_chip_share_insight'), run: () => router.push('/feed/publish') },
+  ];
+
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--ant-color-bg-layout)] px-3 sm:px-6 text-[var(--ant-color-text)]">
-      <div className="sticky top-0 z-40 bg-[var(--ant-color-bg-layout)] pt-3 sm:pt-4 pb-2 sm:pb-3">
-        <div className="mx-auto w-full max-w-[1100px]">
-          <div className="page-section-card content-card rounded-[10px] border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] px-3 py-2.5 sm:px-4 sm:py-3">
-            <FeedFilters
-              value={filters}
-              options={filterOptions}
-              onChange={setFilters}
-              streamView={streamView}
-              onStreamViewChange={setStreamView}
-            />
+    <div
+      ref={wrapperRef}
+      className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto overflow-x-hidden bg-background px-4 text-foreground sm:px-6"
+    >
+      {/* Toolbar: stays in view while the posts scroll under it. */}
+      <div className="sticky top-0 z-30 -mx-4 bg-background/95 px-4 pb-3 pt-4 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="mx-auto w-full max-w-6xl">
+          <FeedFilters
+            value={filters}
+            options={filterOptions}
+            onChange={setFilters}
+            streamView={streamView}
+            onStreamViewChange={setStreamView}
+          />
+          {highlightPostId && !resolvedHighlightId ? (
+            <p
+              role="status"
+              className="m-0 mt-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm"
+            >
+              <Info className="size-4 shrink-0" aria-hidden />
+              {t('finding_post')}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-4 pb-10 pt-1">
+        <NewPostComposer
+          onPosted={handleNewPost}
+          feedScope={filters.scope}
+          onAudienceChange={(scope) => setFilters({ ...filters, scope })}
+        />
+
+        {newPostsCount > 0 && !loading ? (
+          <div className="flex justify-center">
+            <Button
+              className="rounded-full px-4 shadow-sm"
+              onClick={() => {
+                setNewPostsCount(0);
+                latestItemIdRef.current = null;
+                void resetFeedToFirstPage();
+              }}
+            >
+              <ArrowDown />
+              {newPostsCount === 1 ? t('one_new_post') : t('n_new_posts', { count: newPostsCount })}
+            </Button>
           </div>
-        </div>
-        {highlightPostId && !resolvedHighlightId ? (
-          <Alert type="info" showIcon message={t('finding_post')} className="mx-auto mt-3 max-w-[1100px]" />
         ) : null}
-      </div>
 
-      <div className="mt-5 flex min-w-0 flex-col pb-10">
-        <div className="mx-auto w-full max-w-[1100px]">
-              <NewPostComposer
-                onPosted={handleNewPost}
-                feedScope={filters.scope}
-                onAudienceChange={(scope) => setFilters({ ...filters, scope })}
-              />
-              {/* New posts available banner */}
-              {newPostsCount > 0 && !loading && (
-                <div className="mb-4 flex justify-center">
-                  <Button
-                    type="primary"
-                    icon={<ArrowDownOutlined />}
-                    className="flex items-center gap-2 rounded-full px-5 py-2 h-auto text-sm font-medium shadow-sm transition-all hover:translate-y-[-1px]"
-                    onClick={() => {
-                      setNewPostsCount(0);
-                      latestItemIdRef.current = null;
-                      void resetFeedToFirstPage();
-                    }}
-                  >
-                    {newPostsCount === 1 ? t('one_new_post') : t('n_new_posts', { count: newPostsCount })}
-                  </Button>
-                </div>
-              )}
-
-              {SHOW_FEED_APPROVALS_UI && approvalAccessResolved && canModerateApprovals && (
-                <div className="mb-6 rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-4 shadow-sm">
-                  <div className="flex items-center gap-2 mb-3">
-                    <h2 className="text-base font-semibold text-[var(--ant-color-text)] m-0">
-                      {t('pending_approvals')}
-                    </h2>
-                    {approvalQueue.length > 0 ? (
-                      <Tag color="gold" className="m-0 border-0 font-medium">
-                        {approvalQueue.length}
-                      </Tag>
-                    ) : null}
-                  </div>
-
-                  {loadingApprovals && (
-                    <div className="flex flex-col items-center justify-center p-6 text-center text-sm text-[var(--ant-color-text-secondary)] bg-[var(--ant-color-bg-layout)] border border-dashed border-[var(--ant-color-border-secondary)] rounded-xl">
-                      {t('loading_approval_queue')}
-                    </div>
-                  )}
-
-                  {!loadingApprovals && approvalQueue.length === 0 && (
-                    <div className="flex flex-col items-center justify-center p-6 text-center text-sm text-[var(--ant-color-text-secondary)] bg-[var(--ant-color-bg-layout)] border border-dashed border-[var(--ant-color-border-secondary)] rounded-xl">
-                      {t('no_pending_publications')}
-                    </div>
-                  )}
-
-                  {!loadingApprovals && approvalQueue.length > 0 && (
-                    <div className="flex flex-col gap-4">
-                      {approvalQueue.map((entry) => {
-                        const isApproving = approveMutation.isPending && approveMutation.variables === entry.id;
-                        const isRejecting = rejectMutation.isPending && rejectMutation.variables?.queueItemId === entry.id;
-                        const submittedText = formatTimeAgo(entry.submittedAt);
-                        const visibilityLabel = entry.visibility.charAt(0).toUpperCase() + entry.visibility.slice(1);
-                        return (
-                          <div
-                            key={`approval-${entry.id}`}
-                            className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm overflow-hidden flex flex-col relative group"
-                          >
-                            <div className="absolute top-0 left-0 w-1 h-full bg-amber-400"></div>
-                            <div className="pl-4">
-                              <FeedCard item={entry.item} compact hideInteractions />
-                            </div>
-                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-[var(--ant-color-bg-layout)] border-t border-[var(--ant-color-border-secondary)] mt-2">
-                              <div className="flex items-center gap-2 text-sm text-[var(--ant-color-text-secondary)]">
-                                <span className="font-medium text-[var(--ant-color-text)]">
-                                  {t('submitted_time', { submittedText })}
-                                </span>
-                                <span className="text-[var(--ant-color-text-description)]">&middot;</span>
-                                <span className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border)] px-2 py-0.5 rounded text-xs font-semibold">
-                                  {visibilityLabel}
-                                </span>
-                                {entry.possiblePersonalData ? (
-                                  <span className="text-[var(--ant-color-warning-text)]">{t('possible_personal_data')}</span>
-                                ) : null}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  className="h-9 rounded-lg font-medium"
-                                  loading={isRejecting}
-                                  disabled={isApproving}
-                                  onClick={() => openRejectModal(entry.id)}
-                                >
-                                  {t('reject')}
-                                </Button>
-                                <Button
-                                  type="primary"
-                                  className="h-9 rounded-lg font-medium"
-                                  loading={isApproving}
-                                  disabled={isRejecting}
-                                  onClick={() => handleApprovePublication(entry.id)}
-                                >
-                                  {t('approve')}
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {visibleItems.length === 0 && !loading && (
-                <div className="flex flex-col items-center justify-center gap-3 p-10 text-center bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm my-6">
-                  <h3 className="m-0 text-base font-semibold text-[var(--ant-color-text)]">
-                    {streamView !== 'all' && items.length > 0
-                      ? streamView === 'insights'
-                        ? t('empty_title_stream_insights')
-                        : t('empty_title_stream_discussions')
-                      : emptyStateTitle}
-                  </h3>
-                  <p className="m-0 text-sm text-[var(--ant-color-text-secondary)] max-w-md">
-                    {streamView !== 'all' && items.length > 0
-                      ? t('empty_sub_stream_switch')
-                      : emptyStateSubtitle}
-                  </p>
-                  <div className="flex flex-wrap items-center justify-center gap-3 mt-3">
-                    <Button
-                      type="primary"
-                      icon={<MessageOutlined />}
-                      className="rounded-lg font-medium"
-                      onClick={() => router.push(getChatHref({ prompt: t('explore_prompt_question') }))}
-                    >
-                      {t('empty_cta_explore_ai')}
-                    </Button>
-                    <Dropdown
-                      trigger={['click']}
-                      menu={{
-                        items: [
-                          { key: 'discover', icon: <CompassOutlined />, label: t('discover') },
-                          { key: 'trending', icon: <FireOutlined />, label: t('explore_chip_trending') },
-                          { key: 'team', icon: <TeamOutlined />, label: t('explore_chip_team') },
-                          { key: 'learn', icon: <BulbOutlined />, label: t('explore_chip_learn') },
-                          { key: 'build_dashboard', icon: <DashboardOutlined />, label: t('build_dashboard') },
-                          { key: 'share', icon: <ShareAltOutlined />, label: t('explore_chip_share_insight') },
-                        ],
-                        onClick: ({ key }) => {
-                          switch (key) {
-                            case 'discover':
-                              setDiscoveryOpen(true);
-                              break;
-                            case 'trending':
-                              setFilters({ ...filters, sort: 'trending', scope: defaultScope });
-                              break;
-                            case 'team':
-                              setFilters({ ...filters, scope: defaultScope, sort: 'recommended' });
-                              break;
-                            case 'learn':
-                              router.push(getChatHref({ prompt: t('explore_prompt_learn') }));
-                              break;
-                            case 'build_dashboard':
-                              router.push('/dashboards');
-                              break;
-                            case 'share':
-                              router.push('/feed/publish');
-                              break;
-                            default:
-                              break;
-                          }
-                        },
-                      }}
-                    >
-                      <Button className="rounded-lg font-medium">
-                        {t('explore_more')} <DownOutlined />
-                      </Button>
-                    </Dropdown>
-                  </div>
-                  {!user && (
-                    <Button
-                      type="link"
-                      icon={<UserAddOutlined />}
-                      className="font-medium"
-                      onClick={() => router.push('/login')}
-                    >
-                      {t('sign_in_to_save')}
-                    </Button>
-                  )}
-                </div>
-              )}
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                {visibleItems.map((item) => {
-                  const highlighted =
-                    resolvedHighlightId === item.id ||
-                    (focusedPostIndex >= 0 && items[focusedPostIndex]?.id === item.id);
-                  if (isTextPostItem(item)) {
-                    const card = (
-                      <FeedCard
-                        item={item}
-                        compact
-                        highlighted={highlighted}
-                        onReact={handleReact}
-                        onSave={handleSave}
-                        onAddComment={handleAddComment}
-                        onToggleFollow={handleToggleFollow}
-                        onDeleteItem={handleDeleteItem}
-                        onUpdatePost={handleUpdatePost}
-                        onCommentDeleted={handleCommentDeleted}
-                        interactionState={pendingInteractions[item.id]}
-                      />
-                    );
-                    return (
-                      <div key={item.id} className="col-span-full">
-                        {isNoiseTextPost(item) ? (
-                          <SoftCollapsedFeedPost item={item}>{card}</SoftCollapsedFeedPost>
-                        ) : (
-                          card
-                        )}
-                      </div>
-                    );
-                  }
-                  return (
-                    <FeedGridCard
-                      key={item.id}
-                      item={item}
-                      highlighted={highlighted}
-                      onReact={handleReact}
-                      onSave={handleSave}
-                      onToggleFollow={handleToggleFollow}
-                      onDeleteItem={handleDeleteItem}
-                      interactionState={pendingInteractions[item.id]}
-                    />
-                  );
-                })}
-                {loading &&
-                  Array.from({
-                    length: visibleItems.length === 0 ? FEED_SKELETON_COUNT : FEED_SKELETON_APPEND_COUNT,
-                  }).map((_, index) => (
-                    <FeedCardSkeleton
-                      key={`feed-skeleton-${visibleItems.length === 0 ? 'initial' : 'append'}-${index}`}
-                      compact
-                    />
-                  ))}
-                <div ref={sentinelRef} className="col-span-full h-4" />
-                {!feedQuery.hasNextPage && visibleItems.length > 0 && !loading && (
+        {SHOW_FEED_APPROVALS_UI && approvalAccessResolved && canModerateApprovals ? (
+          <section className="flex flex-col gap-3 rounded-xl border bg-card p-4" aria-label={t('pending_approvals')}>
+            <h2 className="m-0 flex items-center gap-2 text-base font-semibold">
+              {t('pending_approvals')}
+              {approvalQueue.length > 0 ? <Badge variant="warning">{approvalQueue.length}</Badge> : null}
+            </h2>
+            {loadingApprovals ? (
+              <p className="m-0 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                {t('loading_approval_queue')}
+              </p>
+            ) : approvalQueue.length === 0 ? (
+              <p className="m-0 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                {t('no_pending_publications')}
+              </p>
+            ) : (
+              approvalQueue.map((entry) => {
+                const isApproving = approveMutation.isPending && approveMutation.variables === entry.id;
+                const isRejecting = rejectMutation.isPending && rejectMutation.variables?.queueItemId === entry.id;
+                const submittedText = formatTimeAgo(entry.submittedAt);
+                const visibilityLabel = entry.visibility.charAt(0).toUpperCase() + entry.visibility.slice(1);
+                return (
                   <div
-                    ref={endFeedActionRef}
-                    className={`col-span-full flex flex-col items-center gap-4 py-8 transition-all duration-300 ${
-                      showEndFeedAction ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'
-                    }`}
+                    key={`approval-${entry.id}`}
+                    className="overflow-hidden rounded-xl border border-l-4 border-l-amber-400"
                   >
-                    <div className="flex items-center gap-3 w-full max-w-xs text-[11px] text-[var(--ant-color-text-secondary)] font-semibold tracking-wider">
-                      <span className="flex-1 h-px bg-[var(--ant-color-border-secondary)]" />
-                      <span>{t('end_of_feed')}</span>
-                      <span className="flex-1 h-px bg-[var(--ant-color-border-secondary)]" />
+                    <FeedCard item={entry.item} compact hideInteractions />
+                    <div className="flex flex-col items-center justify-between gap-3 border-t bg-muted/50 p-3 sm:flex-row">
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                        <span className="font-medium text-foreground">{t('submitted_time', { submittedText })}</span>
+                        <Badge variant="outline">{visibilityLabel}</Badge>
+                        {entry.possiblePersonalData ? (
+                          <span className="text-amber-700 dark:text-amber-300">{t('possible_personal_data')}</span>
+                        ) : null}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          disabled={isApproving || isRejecting}
+                          onClick={() => openRejectModal(entry.id)}
+                        >
+                          {isRejecting ? <Loader2 className="animate-spin" /> : null}
+                          {t('reject')}
+                        </Button>
+                        <Button
+                          disabled={isApproving || isRejecting}
+                          onClick={() => handleApprovePublication(entry.id)}
+                        >
+                          {isApproving ? <Loader2 className="animate-spin" /> : null}
+                          {t('approve')}
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      icon={<ArrowUpOutlined className={refreshingFromEndAction ? 'animate-spin' : ''} />}
-                      loading={refreshingFromEndAction}
-                      disabled={refreshingFromEndAction}
-                      onMouseEnter={() => setEndFeedActionInteracted(true)}
-                      onFocus={() => setEndFeedActionInteracted(true)}
-                      onClick={() => {
-                        setEndFeedActionInteracted(true);
-                        void handleScrollToTop();
-                      }}
-                      className={`rounded-full h-10 px-6 font-medium shadow-sm transition-all hover:-translate-y-0.5 ${
-                        showEndFeedAction && !refreshingFromEndAction && !endFeedActionInteracted ? 'animate-pulse' : ''
-                      }`}
-                    >
-                      {refreshingFromEndAction ? t('refreshing_feed') : t('back_to_top_and_refresh')}
-                    </Button>
                   </div>
-                )}
+                );
+              })
+            )}
+          </section>
+        ) : null}
+
+        {visibleItems.length === 0 && !loading ? (
+          <section className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card px-6 py-10 text-center">
+            <h3 className="m-0 text-base font-semibold">
+              {streamView !== 'all' && items.length > 0
+                ? streamView === 'insights'
+                  ? t('empty_title_stream_insights')
+                  : t('empty_title_stream_discussions')
+                : emptyStateTitle}
+            </h3>
+            <p className="m-0 max-w-md text-sm text-muted-foreground">
+              {streamView !== 'all' && items.length > 0 ? t('empty_sub_stream_switch') : emptyStateSubtitle}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              <Button onClick={() => router.push(getChatHref({ prompt: t('explore_prompt_question') }))}>
+                <MessageCircleMore />
+                {t('empty_cta_explore_ai')}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    {t('explore_more')}
+                    <ChevronDown />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center">
+                  {exploreActions.map((action) => (
+                    <DropdownMenuItem key={action.key} onSelect={action.run}>
+                      {action.icon}
+                      {action.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            {!user ? (
+              <Button variant="link" onClick={() => router.push('/login')}>
+                <UserPlus />
+                {t('sign_in_to_save')}
+              </Button>
+            ) : null}
+          </section>
+        ) : null}
+
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2" role="feed" aria-busy={loading}>
+          {visibleItems.map((item) => {
+            const highlighted =
+              resolvedHighlightId === item.id || (focusedPostIndex >= 0 && items[focusedPostIndex]?.id === item.id);
+            if (isTextPostItem(item)) {
+              const card = (
+                <FeedCard
+                  item={item}
+                  compact
+                  highlighted={highlighted}
+                  onReact={handleReact}
+                  onSave={handleSave}
+                  onAddComment={handleAddComment}
+                  onToggleFollow={handleToggleFollow}
+                  onDeleteItem={handleDeleteItem}
+                  onUpdatePost={handleUpdatePost}
+                  onCommentDeleted={handleCommentDeleted}
+                  interactionState={pendingInteractions[item.id]}
+                />
+              );
+              return (
+                <div key={item.id} className="col-span-full">
+                  {isNoiseTextPost(item) ? <SoftCollapsedFeedPost item={item}>{card}</SoftCollapsedFeedPost> : card}
+                </div>
+              );
+            }
+            return (
+              <FeedGridCard
+                key={item.id}
+                item={item}
+                highlighted={highlighted}
+                onReact={handleReact}
+                onSave={handleSave}
+                onToggleFollow={handleToggleFollow}
+                onDeleteItem={handleDeleteItem}
+                interactionState={pendingInteractions[item.id]}
+              />
+            );
+          })}
+          {loading
+            ? Array.from({ length: visibleItems.length === 0 ? FEED_SKELETON_COUNT : FEED_SKELETON_APPEND_COUNT }).map(
+                (_, index) => (
+                  <FeedCardSkeleton
+                    key={`feed-skeleton-${visibleItems.length === 0 ? 'initial' : 'append'}-${index}`}
+                    compact
+                  />
+                )
+              )
+            : null}
+          <div ref={sentinelRef} className="col-span-full h-4" />
+          {!feedQuery.hasNextPage && visibleItems.length > 0 && !loading ? (
+            <div
+              ref={endFeedActionRef}
+              className={cn(
+                'col-span-full flex flex-col items-center gap-4 py-8 transition-all duration-300',
+                showEndFeedAction ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0'
+              )}
+            >
+              <div className="flex w-full max-w-xs items-center gap-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                <span>{t('end_of_feed')}</span>
+                <span className="h-px flex-1 bg-border" />
               </div>
+              <Button
+                variant="outline"
+                className={cn(
+                  'rounded-full px-5',
+                  showEndFeedAction && !refreshingFromEndAction && !endFeedActionInteracted && 'animate-pulse'
+                )}
+                disabled={refreshingFromEndAction}
+                onMouseEnter={() => setEndFeedActionInteracted(true)}
+                onFocus={() => setEndFeedActionInteracted(true)}
+                onClick={() => {
+                  setEndFeedActionInteracted(true);
+                  void handleScrollToTop();
+                }}
+              >
+                {refreshingFromEndAction ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+                {refreshingFromEndAction ? t('refreshing_feed') : t('back_to_top_and_refresh')}
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
+
       <FeedDiscoveryDrawer
         open={discoveryOpen}
         onClose={() => setDiscoveryOpen(false)}
@@ -812,44 +806,43 @@ const SocialFeedPage: React.FC = () => {
           setDiscoveryOpen(false);
         }}
       />
+
       {SHOW_FEED_APPROVALS_UI ? (
-        <Modal
-          title={
-            <div className="flex items-center gap-2 text-[var(--ant-color-error)]">
-              <span className="text-lg font-semibold text-[var(--ant-color-text)] border-b border-[var(--ant-color-border-secondary)] pb-2 block w-full mb-2">
-                {t('reject_publication')}
-              </span>
-            </div>
-          }
-          open={Boolean(rejectTargetId)}
-          okText={t('reject')}
-          okType="danger"
-          okButtonProps={{
-            className: 'bg-[var(--ant-color-error)] hover:bg-[var(--ant-color-error-hover)] h-9 font-medium shadow-sm',
-          }}
-          cancelButtonProps={{ className: 'h-9 font-medium hover:bg-[var(--ant-color-bg-layout)] transition-colors' }}
-          confirmLoading={rejectMutation.isPending}
-          onCancel={closeRejectModal}
-          onOk={handleRejectPublication}
-          className="rounded-xl overflow-hidden"
-        >
-          <p className="text-sm font-medium text-[var(--ant-color-text)] mb-2 mt-4">{t('reason_for_rejection')}</p>
-          <Input.TextArea
-            autoSize={{ minRows: 3, maxRows: 6 }}
-            value={rejectReason}
-            maxLength={500}
-            onChange={(event) => setRejectReason(event.target.value)}
-            placeholder={t('reason_rejection_placeholder')}
-            className="rounded-lg border-[var(--ant-color-border)] focus:border-[var(--ant-color-error)] hover:border-[var(--ant-color-border-secondary)] text-sm py-2 px-3"
-          />
-          <div
-            className={`text-right mt-1.5 text-xs ${
-              rejectReason.length > 450 ? 'text-[var(--ant-color-error)]' : 'text-[var(--ant-color-text-description)]'
-            }`}
-          >
-            {rejectReason.length}/500
-          </div>
-        </Modal>
+        <Dialog open={Boolean(rejectTargetId)} onOpenChange={(open) => !open && closeRejectModal()}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('reject_publication')}</DialogTitle>
+            </DialogHeader>
+            <label htmlFor="feed-reject-reason" className="text-sm font-medium">
+              {t('reason_for_rejection')}
+            </label>
+            <Textarea
+              id="feed-reject-reason"
+              rows={3}
+              value={rejectReason}
+              maxLength={500}
+              onChange={(event) => setRejectReason(event.target.value)}
+              placeholder={t('reason_rejection_placeholder')}
+            />
+            <p
+              className={cn(
+                'm-0 text-right text-xs',
+                rejectReason.length > 450 ? 'text-destructive' : 'text-muted-foreground'
+              )}
+            >
+              {rejectReason.length}/500
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeRejectModal} disabled={rejectMutation.isPending}>
+                {tCommon('cancel')}
+              </Button>
+              <Button variant="destructive" onClick={handleRejectPublication} disabled={rejectMutation.isPending}>
+                {rejectMutation.isPending ? <Loader2 className="animate-spin" /> : null}
+                {t('reject')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   );

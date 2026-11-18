@@ -5,7 +5,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@/components/aicser-ui/button';
 import { qrModules } from '@/lib/office/qr';
 import { remoteApi } from '@/lib/office/sharing';
-import { SLIDE_HEIGHT, SLIDE_WIDTH, slideTitle, type Slide, type Theme } from '@/lib/slides/model';
+import { slideFooter } from '@/lib/slides/footer';
+import { SLIDE_HEIGHT, SLIDE_WIDTH, slideTitle, type Slide, type SlideFooter, type Theme } from '@/lib/slides/model';
 import { QrCode } from './QrCode';
 import { SlideView } from './SlideView';
 
@@ -38,7 +39,15 @@ export function PresentMode({
   start,
   onExit,
   fileId,
-}: Readonly<{ slides: Slide[]; theme: Theme; start: number; onExit: (index: number) => void; fileId?: string }>) {
+  footer,
+}: Readonly<{
+  slides: Slide[];
+  theme: Theme;
+  start: number;
+  onExit: (index: number) => void;
+  fileId?: string;
+  footer?: SlideFooter;
+}>) {
   const [index, setIndex] = useState(Math.min(start, slides.length - 1));
   const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [showNotes, setShowNotes] = useState(false);
@@ -188,7 +197,7 @@ export function PresentMode({
       }}
     >
       <div className="flex min-h-0 w-full flex-1 items-center justify-center">
-        {slide && <SlideView slide={slide} theme={theme} scale={scale} />}
+        {slide && <SlideView slide={slide} theme={theme} scale={scale} footer={slideFooter(footer, slide, index)} />}
       </div>
       {showNotes && (
         <section

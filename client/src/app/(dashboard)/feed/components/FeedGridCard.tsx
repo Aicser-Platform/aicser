@@ -3,38 +3,56 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Avatar, Button, Dropdown, Modal, Popover, Tooltip, message } from 'antd';
-import type { MenuProps } from 'antd';
 import {
-  CheckCircleFilled,
-  CheckOutlined,
-  DeleteOutlined,
-  EyeOutlined,
-  HeartOutlined,
-  LinkOutlined,
-  MessageOutlined,
-  MoreOutlined,
-  ShareAltOutlined,
-  UserAddOutlined,
-} from '@ant-design/icons';
-import { BookmarkIcon } from '@/components/icons/BookmarkIcon';
+  Check,
+  Ellipsis,
+  ExternalLink,
+  Link2,
+  MessageCircle,
+  Share2,
+  ThumbsUp,
+  Trash2,
+  UserCheck,
+  UserPlus,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { socialFeedService, formatTimeAgo } from '@/services/socialFeedService';
-import type { FeedItem, ReactionType } from '@/services/socialFeedService';
-import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
+import { Badge } from '@/components/aicser-ui/badge';
+import { Button } from '@/components/aicser-ui/button';
 import {
-  resolveFeedPostSummary,
-  buildPreviewFeedItem,
-  resolveFeedCardHeading,
-  isFeedPostAuthor,
-} from '@/components/Feed/feedPostDisplay';
-import { FeedPostContent } from '@/components/Feed/FeedPostContent';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/aicser-ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/aicser-ui/dropdown-menu';
+import { BookmarkIcon } from '@/components/icons/BookmarkIcon';
+import { FeedAuthorAvatar } from '@/components/Feed/FeedAuthorAvatar';
 import { FeedImages } from '@/components/Feed/FeedImages';
+import { FeedPostContent } from '@/components/Feed/FeedPostContent';
+import {
+  buildPreviewFeedItem,
+  isFeedPostAuthor,
+  resolveFeedCardHeading,
+  resolveFeedPostSummary,
+} from '@/components/Feed/feedPostDisplay';
+import { useFeedAuthorDisplay } from '@/components/Feed/useFeedAuthorDisplay';
+import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
+import { cn } from '@/lib/ui/utils';
+import { message } from '@/lib/ui/toast';
+import { formatTimeAgo, socialFeedService } from '@/services/socialFeedService';
+import type { FeedItem, ReactionType } from '@/services/socialFeedService';
+import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import FeedCardMedia from './FeedCardMedia';
 import { reactionOptions } from './FeedCard/constants';
 import ReactionBreakdownTooltip from './FeedCard/ReactionBreakdownTooltip';
-import { useAuthStore as useAuth } from '@/stores/useAuthStore';
-import { useFeedAuthorDisplay } from '@/components/Feed/useFeedAuthorDisplay';
 
 interface FeedGridCardProps {
   item: FeedItem;
@@ -55,23 +73,22 @@ interface FeedGridCardProps {
   maxPreviews?: number;
 }
 
-const normalizeHandle = (handle?: string) => handle?.trim().replace(/^@/, '').toLowerCase() || '';
-
-const REACTION_PALETTE: Record<ReactionType, { color: string; softBg: string }> = {
-  like: { color: '#1877F2', softBg: 'rgba(24, 119, 242, 0.12)' },
-  applause: { color: '#2E8B57', softBg: 'rgba(46, 139, 87, 0.14)' },
-  celebrate: { color: '#6F58B0', softBg: 'rgba(111, 88, 176, 0.14)' },
-  love: { color: '#D9643A', softBg: 'rgba(217, 100, 58, 0.14)' },
-  insightful: { color: '#D9A321', softBg: 'rgba(217, 163, 33, 0.16)' },
-  funny: { color: '#18AFC6', softBg: 'rgba(24, 175, 198, 0.14)' },
+/** Reaction colours (brand colours of each reaction, as before). */
+const REACTION_COLOR: Record<ReactionType, string> = {
+  like: '#1877F2',
+  applause: '#2E8B57',
+  celebrate: '#6F58B0',
+  love: '#D9643A',
+  insightful: '#D9A321',
+  funny: '#18AFC6',
 };
 
+const footerButton =
+  'inline-flex h-8 items-center gap-1.5 rounded-md border-0 bg-transparent px-2 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60 [&_svg]:size-4';
+
 /**
- * Single self-contained feed card for the grid view — header, title/description,
- * thumbnail, and a lean action row, all in one component (no Header/Body/Actions
- * split). Comments live on the detail page, not inline here.
- * (The Header/Body/Actions `FeedCard` family still exists for saved/commented/discover
- * views, which do need inline comment threads — see FeedCard/FeedCard.tsx.)
+ * One post in the feed grid (Aicser UI, the desktop's FeedCard): author and time with one menu, the post, its
+ * preview, then reactions · comments · share and Save. Comments live on the post page.
  */
 const FeedGridCard: React.FC<FeedGridCardProps> = ({
   item,
@@ -88,14 +105,13 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const ta = useTranslations('feed_card_actions');
   const router = useRouter();
   const { user } = useAuth();
-  const { avatarUrl: authorAvatarUrl, name: authorName } = useFeedAuthorDisplay(item.author);
+  const { name: authorName } = useFeedAuthorDisplay(item.author);
 
-  const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);
-  const [isSharePopoverOpen, setIsSharePopoverOpen] = useState(false);
-  const [isLinkCopied, setIsLinkCopied] = useState(false);
-  const closePickerTimerRef = useRef<number | null>(null);
-  const longPressTimerRef = useRef<number | null>(null);
-  const reactionPickerRef = useRef<HTMLDivElement | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const closePickerTimer = useRef<number | null>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
 
   const reacting = Boolean(interactionState?.reacting);
   const saving = Boolean(interactionState?.saving);
@@ -106,23 +122,14 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const isPostOwner = isFeedPostAuthor(item, user);
   const canFollow = !!onToggleFollow && !!user && !!item.author?.id && !isPostOwner;
   const isFollowingAuthor = Boolean(item.userInteraction?.isFollowingAuthor);
-
   const currentReaction = item.userInteraction.reaction;
-  const selectedReaction = currentReaction ? reactionOptions.find((option) => option.key === currentReaction) : null;
+  const selectedReaction = currentReaction ? reactionOptions.find((o) => o.key === currentReaction) : null;
   const isBookmarked = item.userInteraction.isBookmarked;
   const authorTitle = item.author.title?.trim();
   const description = useMemo(() => resolveFeedPostSummary(item), [item]);
 
-  // A pure text post has no primary asset of its own (FeedCardMedia skips
-  // its thumbnail entirely for assetType 'post'), so without this a text
-  // post with one or more attached charts/dashboards rendered as bare
-  // title+description in the grid - no visual hint it references anything,
-  // unlike the exact same post's detail page (FeedCardBody), which already
-  // renders every attachment via FeedAttachmentList. Surfacing the first
-  // viewable attachment's thumbnail here (same FeedCardMedia treatment a
-  // real published chart/dashboard card gets) closes that gap; the
-  // remaining count (if any) is called out with the same "+N" pill style
-  // already used for overflow tags below.
+  // A text post has no asset of its own: its first viewable attachment stands in as the preview (as on the post
+  // page), with "+N" for the rest.
   const visibleAttachments = useMemo(
     () => item.attachments?.filter((a) => !a.restricted && a.referencedPostId) ?? [],
     [item.attachments]
@@ -149,425 +156,177 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const mediaItem = attachmentPreviewItem ?? item;
   const heading = useMemo(() => resolveFeedCardHeading(item, mediaItem), [item, mediaItem]);
 
-  const handleOpen = useCallback(() => router.push(detailPath), [router, detailPath]);
-  const handlePrefetch = useCallback(() => router.prefetch(detailPath), [router, detailPath]);
-  const handleToggleFollow = useCallback(() => {
-    if (!item.author?.id || !onToggleFollow) return;
-    onToggleFollow(item.id, item.author.id);
+  const open = useCallback(() => router.push(detailPath), [router, detailPath]);
+  const prefetch = useCallback(() => router.prefetch(detailPath), [router, detailPath]);
+  const toggleFollow = useCallback(() => {
+    if (item.author?.id && onToggleFollow) void onToggleFollow(item.id, item.author.id);
   }, [item.author?.id, item.id, onToggleFollow]);
-  const handleDeleteItem = useCallback(() => {
-    if (!onDeleteItem) return;
-    Modal.confirm({
-      title: t('delete_post_confirm_title'),
-      content: t('delete_post_confirm_content'),
-      okText: t('delete'),
-      okType: 'danger',
-      cancelText: t('cancel'),
-      onOk: () => onDeleteItem(item.id),
-    });
-  }, [item.id, onDeleteItem, t]);
 
-  const getShareUrl = useCallback(() => {
-    if (typeof window === 'undefined') return detailPath;
-    return new URL(detailPath, window.location.origin).toString();
-  }, [detailPath]);
-
-  const handleCopyLink = useCallback(
-    async (event?: React.MouseEvent<HTMLElement>) => {
-      event?.stopPropagation();
-      try {
-        const url = getShareUrl();
-        await navigator.clipboard.writeText(url);
-        void socialFeedService.shareItem(item.id);
-        setIsLinkCopied(true);
-        message.success(t('link_copied'));
-        window.setTimeout(() => setIsLinkCopied(false), 1700);
-      } catch (error) {
-        message.error(errorMessage(error, t('unable_copy_link')));
-      }
-    },
-    [getShareUrl, item.id, t]
+  const shareUrl = useCallback(
+    () => (typeof window === 'undefined' ? detailPath : new URL(detailPath, window.location.origin).toString()),
+    [detailPath]
   );
-
-  const handleShareToLinkedIn = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
-      const url = encodeURIComponent(getShareUrl());
-      window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, '_blank', 'noopener,noreferrer');
+  const copyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl());
       void socialFeedService.shareItem(item.id);
-      setIsSharePopoverOpen(false);
-    },
-    [getShareUrl, item.id]
-  );
-
-  const handleShareToX = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
-      const url = encodeURIComponent(getShareUrl());
-      const text = encodeURIComponent(item.title);
-      window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank', 'noopener,noreferrer');
-      void socialFeedService.shareItem(item.id);
-      setIsSharePopoverOpen(false);
-    },
-    [getShareUrl, item.id, item.title]
-  );
-
-  const handleShareToTelegram = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
-      const url = encodeURIComponent(getShareUrl());
-      const text = encodeURIComponent(item.title);
-      window.open(`https://t.me/share/url?url=${url}&text=${text}`, '_blank', 'noopener,noreferrer');
-      void socialFeedService.shareItem(item.id);
-      setIsSharePopoverOpen(false);
-    },
-    [getShareUrl, item.id, item.title]
-  );
-
-  const handleShareToWhatsApp = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
-      const shareUrl = getShareUrl();
-      const text = encodeURIComponent(`${item.title}\n${shareUrl}`);
-      window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
-      void socialFeedService.shareItem(item.id);
-      setIsSharePopoverOpen(false);
-    },
-    [getShareUrl, item.id, item.title]
-  );
-
-  const clearReactionCloseTimer = useCallback(() => {
-    if (closePickerTimerRef.current !== null) {
-      window.clearTimeout(closePickerTimerRef.current);
-      closePickerTimerRef.current = null;
+      message.success(t('link_copied'));
+    } catch (error) {
+      message.error(errorMessage(error, t('unable_copy_link')));
     }
+  }, [shareUrl, item.id, t]);
+  const shareTo = useCallback(
+    (network: 'linkedin' | 'x' | 'telegram' | 'whatsapp') => {
+      const url = encodeURIComponent(shareUrl());
+      const text = encodeURIComponent(item.title);
+      const target = {
+        linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${url}`,
+        x: `https://twitter.com/intent/tweet?url=${url}&text=${text}`,
+        telegram: `https://t.me/share/url?url=${url}&text=${text}`,
+        whatsapp: `https://wa.me/?text=${encodeURIComponent(`${item.title}\n${shareUrl()}`)}`,
+      }[network];
+      window.open(target, '_blank', 'noopener,noreferrer');
+      void socialFeedService.shareItem(item.id);
+    },
+    [shareUrl, item.id, item.title]
+  );
+
+  // Reaction picker: opens on hover (or a long press on touch), the button itself toggles the current reaction.
+  const clearClose = useCallback(() => {
+    if (closePickerTimer.current !== null) window.clearTimeout(closePickerTimer.current);
+    closePickerTimer.current = null;
   }, []);
-
-  const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+  const clearLongPress = useCallback(() => {
+    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
   }, []);
-
-  const closeReactionPicker = useCallback(() => {
-    clearReactionCloseTimer();
-    setIsReactionPickerOpen(false);
-  }, [clearReactionCloseTimer]);
-
-  const openReactionPicker = useCallback(() => {
-    clearReactionCloseTimer();
-    setIsReactionPickerOpen(true);
-  }, [clearReactionCloseTimer]);
-
-  const scheduleReactionPickerClose = useCallback(() => {
-    clearReactionCloseTimer();
-    closePickerTimerRef.current = window.setTimeout(() => setIsReactionPickerOpen(false), 140);
-  }, [clearReactionCloseTimer]);
-
-  const handleReactionSelect = useCallback(
+  const react = useCallback(
     (reaction: ReactionType) => {
       void onReact?.(item.id, reaction);
-      closeReactionPicker();
+      clearClose();
+      setPickerOpen(false);
     },
-    [closeReactionPicker, item.id, onReact]
+    [clearClose, item.id, onReact]
   );
-
-  const handleReactionPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      if (event.pointerType !== 'touch' || reacting) return;
-      clearLongPressTimer();
-      longPressTimerRef.current = window.setTimeout(() => setIsReactionPickerOpen(true), 260);
+  useEffect(
+    () => () => {
+      clearClose();
+      clearLongPress();
     },
-    [clearLongPressTimer, reacting]
+    [clearClose, clearLongPress]
   );
-
   useEffect(() => {
-    return () => {
-      clearReactionCloseTimer();
-      clearLongPressTimer();
+    if (!pickerOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !pickerRef.current?.contains(event.target)) setPickerOpen(false);
     };
-  }, [clearReactionCloseTimer, clearLongPressTimer]);
+    document.addEventListener('pointerdown', outside, true);
+    return () => document.removeEventListener('pointerdown', outside, true);
+  }, [pickerOpen]);
 
-  useEffect(() => {
-    if (!isReactionPickerOpen) return;
-    const handleOutsidePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (!reactionPickerRef.current?.contains(target)) closeReactionPicker();
-    };
-    document.addEventListener('pointerdown', handleOutsidePointerDown, true);
-    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown, true);
-  }, [isReactionPickerOpen, closeReactionPicker]);
-
-  const stopPropagation = (event: React.MouseEvent<HTMLElement>) => event.stopPropagation();
-
-  const menuItems: MenuProps['items'] = [
-    { key: 'open', label: t('open_post') },
-    { key: 'copy', label: t('copy_link') },
-    ...(canFollow ? [{ key: 'follow', label: isFollowingAuthor ? t('unfollow_author') : t('follow_author') }] : []),
-    ...(isPostOwner && onDeleteItem
-      ? [{ type: 'divider' as const }, { key: 'delete', danger: true, label: t('delete_post') }]
-      : []),
-  ];
-
-  // RELIABILITY: this used to only compute a profile link when detailBasePath
-  // was '/discover' — '/feed' (this component's own default prop value) never
-  // got one at all, so an author's name and avatar were dead, unclickable text
-  // on the actual feed page. /discover/author/[username] (backed by the real
-  // GET /public/authors/{username} endpoint) already exists and already
-  // handles viewing your own post's author the same way as anyone else's
-  // (standard social-app convention — Twitter/LinkedIn do the same), so there
-  // was never a reason to gate this by which page the card happened to be on.
+  // An author's name and photo open their public profile (also for your own posts, as on other social apps).
   const authorProfileHref = item.author.username
     ? `/discover/author/${encodeURIComponent(item.author.username.replace(/^@/, ''))}`
     : null;
-
-  const shareMenuContent = (
-    <div
-      className="flex flex-col min-w-[200px] text-sm overflow-hidden rounded-xl bg-[var(--ant-color-bg-elevated)]"
-      onClick={stopPropagation}
-    >
-      <button
-        type="button"
-        className={`flex items-center gap-2.5 px-4 py-3 text-left font-medium transition-colors ${isLinkCopied ? 'bg-[var(--ant-color-success-bg)] text-[var(--ant-color-success)]' : 'text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)]'}`}
-        onClick={handleCopyLink}
-      >
-        {isLinkCopied ? <CheckCircleFilled className="text-lg" /> : <LinkOutlined className="text-lg" />}
-        <span>{isLinkCopied ? t('link_copied') : t('copy_link')}</span>
-      </button>
-      <div className="h-px bg-[var(--ant-color-border-secondary)] w-full" />
-      <button
-        type="button"
-        className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
-        onClick={handleShareToLinkedIn}
-      >
-        {ta('share_to_linkedin')}
-      </button>
-      <button
-        type="button"
-        className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
-        onClick={handleShareToX}
-      >
-        {ta('share_to_x')}
-      </button>
-      <button
-        type="button"
-        className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
-        onClick={handleShareToTelegram}
-      >
-        {ta('share_to_telegram')}
-      </button>
-      <button
-        type="button"
-        className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
-        onClick={handleShareToWhatsApp}
-      >
-        {ta('share_to_whatsapp')}
-      </button>
-    </div>
-  );
+  const avatar = <FeedAuthorAvatar author={item.author} size={32} />;
 
   return (
     <div id={`feed-post-${item.id}`} className="w-full">
-      <div
-        className={`flex w-full flex-col bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm hover:shadow-md overflow-hidden transition-all duration-300 ${
-          highlighted ? 'ring-2 ring-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]' : ''
-        }`}
+      <article
+        className={cn(
+          'flex w-full flex-col overflow-hidden rounded-xl border bg-card text-card-foreground transition-shadow hover:shadow-sm',
+          highlighted && 'ring-2 ring-primary'
+        )}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2 px-3.5 sm:px-4 py-2.5 sm:py-3 border-b border-[var(--ant-color-border-secondary)]">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <header className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             {authorProfileHref ? (
-              <Link href={authorProfileHref} onClick={stopPropagation} className="shrink-0">
-                <Avatar
-                  size={32}
-                  src={authorAvatarUrl}
-                  className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] font-medium cursor-pointer"
-                >
-                  {authorName.charAt(0).toUpperCase()}
-                </Avatar>
+              <Link href={authorProfileHref} className="shrink-0 rounded-full">
+                {avatar}
               </Link>
             ) : (
-              <Avatar
-                size={32}
-                src={authorAvatarUrl}
-                className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
-              >
-                {authorName.charAt(0).toUpperCase()}
-              </Avatar>
+              avatar
             )}
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5 truncate">
+            <div className="flex min-w-0 flex-col">
+              <div className="flex min-w-0 items-center gap-1.5">
                 {authorProfileHref ? (
-                  <Link href={authorProfileHref} onClick={stopPropagation} className="truncate">
-                    <span className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight hover:text-[var(--ant-color-primary)]">
-                      {authorName}
-                    </span>
+                  <Link
+                    href={authorProfileHref}
+                    className="truncate text-sm font-semibold text-foreground no-underline hover:underline"
+                  >
+                    {authorName}
                   </Link>
                 ) : (
-                  <span className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight truncate">
-                    {authorName}
-                  </span>
+                  <span className="truncate text-sm font-semibold">{authorName}</span>
                 )}
                 {isPostOwner ? (
-                  <span className="shrink-0 rounded-full bg-[var(--ant-color-primary-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ant-color-primary)]">
-                    Author
-                  </span>
+                  <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                    {t('author_badge')}
+                  </Badge>
                 ) : null}
               </div>
-              <span className="text-xs text-[var(--ant-color-text-tertiary)] truncate">
-                {authorTitle ? `${authorTitle} • ` : ''}
+              <span className="truncate text-xs text-muted-foreground">
+                {authorTitle ? `${authorTitle} · ` : ''}
                 {formatTimeAgo(item.lastActivityAt || item.publishedAt)}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
-            {/* Quick View Icon Button */}
-            <Tooltip title={t('open_post')}>
-              <Button
-                type="text"
-                size="small"
-                shape="circle"
-                aria-label={t('open_post')}
-                icon={<EyeOutlined className="text-sm" />}
-                className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)] hover:bg-[var(--ant-color-bg-layout)] w-7 h-7 flex items-center justify-center p-0 shrink-0"
-                onMouseEnter={handlePrefetch}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleOpen();
-                }}
-              />
-            </Tooltip>
-
-            {/* Quick Bookmark / Save Icon Button */}
-            <Tooltip title={isBookmarked ? ta('saved') : ta('save')}>
-              <Button
-                type="text"
-                size="small"
-                shape="circle"
-                aria-label={isBookmarked ? ta('saved') : ta('save')}
-                icon={
-                  <BookmarkIcon
-                    filled={isBookmarked}
-                    className={isBookmarked ? 'text-[var(--ant-color-primary)] text-sm' : 'text-[var(--ant-color-text-secondary)] text-sm'}
-                  />
-                }
-                className={`w-7 h-7 flex items-center justify-center p-0 shrink-0 hover:bg-[var(--ant-color-bg-layout)] ${
-                  isBookmarked
-                    ? 'text-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]'
-                    : 'text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)]'
-                }`}
-                disabled={saving}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void onSave?.(item.id);
-                }}
-              />
-            </Tooltip>
-
-            {/* Follow Button: ONLY for non-author */}
-            {canFollow && (
-              <Tooltip title={isFollowingAuthor ? t('unfollow_author') : t('follow_author')}>
-                <Button
-                  type="text"
-                  size="small"
-                  shape="circle"
-                  aria-label={isFollowingAuthor ? t('unfollow_author') : t('follow_author')}
-                  icon={
-                    isFollowingAuthor ? (
-                      <CheckOutlined className="text-[var(--ant-color-primary)]" />
-                    ) : (
-                      <UserAddOutlined />
-                    )
-                  }
-                  className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)] hover:bg-[var(--ant-color-bg-layout)] w-7 h-7 flex items-center justify-center p-0 shrink-0"
-                  loading={followPending}
-                  disabled={followPending || deleting}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleToggleFollow();
-                  }}
-                />
-              </Tooltip>
-            )}
-
-            {/* Delete button: ONLY for post author */}
-            {isPostOwner && onDeleteItem && (
-              <Tooltip title={t('delete')}>
-                <Button
-                  type="text"
-                  size="small"
-                  shape="circle"
-                  danger
-                  aria-label={t('delete')}
-                  icon={<DeleteOutlined className="text-sm" />}
-                  className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-error)] hover:bg-[var(--ant-color-bg-layout)] w-7 h-7 flex items-center justify-center p-0 shrink-0"
-                  loading={deleting}
-                  disabled={deleting}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleDeleteItem();
-                  }}
-                />
-              </Tooltip>
-            )}
-
-            <Dropdown
-              trigger={['click']}
-              classNames={{ root: "min-w-[160px] shadow-lg rounded-lg overflow-hidden py-1" }}
-              menu={{
-                items: menuItems,
-                onClick: ({ key, domEvent }) => {
-                  domEvent.stopPropagation();
-                  if (key === 'open') handleOpen();
-                  else if (key === 'copy') void handleCopyLink();
-                  else if (key === 'follow') handleToggleFollow();
-                  else if (key === 'delete') handleDeleteItem();
-                },
-              }}
-            >
-              <Button
-                type="text"
-                className="text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-bg-layout)] rounded-full w-7 h-7 flex items-center justify-center p-0 shrink-0"
-                disabled={deleting}
-                onClick={stopPropagation}
-              >
-                <MoreOutlined className="text-base rotate-90" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label={t('more_actions')} disabled={deleting}>
+                <Ellipsis />
               </Button>
-            </Dropdown>
-          </div>
-        </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={open} onMouseEnter={prefetch}>
+                <ExternalLink /> {t('open_post')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void copyLink()}>
+                <Link2 /> {t('copy_link')}
+              </DropdownMenuItem>
+              {canFollow ? (
+                <DropdownMenuItem disabled={followPending} onSelect={toggleFollow}>
+                  {isFollowingAuthor ? <UserCheck /> : <UserPlus />}
+                  {isFollowingAuthor ? t('unfollow_author') : t('follow_author')}
+                </DropdownMenuItem>
+              ) : null}
+              {isPostOwner && onDeleteItem ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>
+                    <Trash2 /> {t('delete_post')}
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
 
-        {/* Post Message Layout */}
-        <div className="shrink-0 px-3.5 sm:px-4 pt-3 pb-1.5" onClick={stopPropagation}>
+        <div className="px-4 pb-2">
           <FeedPostContent
             item={item}
             titleOverride={heading || undefined}
             descriptionOverride={description || undefined}
-            compactTitle={false}
             descriptionMaxRows={3}
             variant="card"
           />
         </div>
 
-        <div onClick={stopPropagation}>
-          <FeedImages images={item.images} compact />
-        </div>
+        <FeedImages images={item.images} compact />
 
-        <div className={`min-w-0 flex-1 px-3.5 sm:px-4 pb-2.5 ${maxPreviews <= 1 ? 'min-h-[220px]' : ''}`}>
+        <div className={cn('min-w-0 flex-1 px-4 pb-3', maxPreviews <= 1 && 'min-h-[220px]')}>
           <FeedCardMedia
             item={mediaItem}
             maxPreviews={maxPreviews}
             fillHeight={maxPreviews <= 1}
             previewClickable
-            onPreviewClick={handleOpen}
+            onPreviewClick={open}
             thumbnailWrapperClassName={maxPreviews <= 1 ? 'h-full' : undefined}
             tagsWrapperClassName="px-0 pt-2 pb-0"
             cornerBadge={
               extraAttachmentCount > 0 ? (
-                <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">
+                <span className="rounded-full bg-popover px-2 py-0.5 text-[10px] font-semibold text-muted-foreground shadow-sm ring-1 ring-foreground/10">
                   +{extraAttachmentCount}
                 </span>
               ) : undefined
@@ -575,123 +334,134 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
           />
         </div>
 
-        {/* Footer actions — pinned to the bottom of the card */}
-        <div
-          className="flex items-center justify-between gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 border-t border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)]"
-          onClick={stopPropagation}
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div
-              ref={reactionPickerRef}
-              className="relative"
-              onMouseEnter={openReactionPicker}
-              onMouseLeave={scheduleReactionPickerClose}
-            >
-              {isReactionPickerOpen && !reacting && (
-                <div
-                  className="absolute bottom-full left-0 mb-2 bg-[var(--ant-color-bg-elevated)] rounded-full shadow-lg border border-[var(--ant-color-border-secondary)] p-1 flex items-center gap-1 z-50 max-w-[calc(100vw-32px)] overflow-x-auto"
-                  role="menu"
-                  aria-label={ta('choose_reaction_aria')}
-                >
-                  {reactionOptions.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={`flex items-center justify-center w-9 h-9 rounded-full transition-transform hover:scale-110 active:scale-95 ${
-                        currentReaction === option.key ? 'ring-2 ring-[var(--ant-color-border)] scale-110' : ''
-                      }`}
-                      aria-label={option.label}
-                      title={option.label}
-                      style={{
-                        color: REACTION_PALETTE[option.key].color,
-                        backgroundColor:
-                          currentReaction === option.key ? REACTION_PALETTE[option.key].softBg : 'transparent',
-                      }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleReactionSelect(option.key);
-                      }}
-                    >
-                      <span className="text-base">{option.icon}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <ReactionBreakdownTooltip breakdown={item.metrics.reactionBreakdown}>
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 text-sm font-medium min-h-[36px] px-2 py-1 rounded-lg text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
-                  style={currentReaction ? { color: REACTION_PALETTE[currentReaction].color } : undefined}
-                  disabled={reacting}
-                  aria-label={selectedReaction?.label || ta('like')}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleReactionSelect(currentReaction || 'like');
-                  }}
-                  onPointerDown={handleReactionPointerDown}
-                  onPointerUp={clearLongPressTimer}
-                  onPointerCancel={clearLongPressTimer}
-                  onPointerLeave={clearLongPressTimer}
-                >
-                  {selectedReaction?.icon || <HeartOutlined className="text-base" />}
-                  <span>{item.metrics.reactions}</span>
-                </button>
-              </ReactionBreakdownTooltip>
-            </div>
-
-            <button
-              type="button"
-              className="flex items-center gap-1.5 text-sm font-medium min-h-[36px] px-2 py-1 rounded-lg text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors"
-              onMouseEnter={handlePrefetch}
-              onClick={(event) => {
-                event.stopPropagation();
-                handleOpen();
-              }}
-            >
-              <MessageOutlined className="text-base" />
-              <span>{item.metrics.comments}</span>
-            </button>
-
-            <Popover
-              trigger="click"
-              placement="top"
-              overlayClassName="p-0 shadow-xl rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-elevated)]"
-              open={isSharePopoverOpen}
-              onOpenChange={(open) => {
-                setIsSharePopoverOpen(open);
-                if (!open) setIsLinkCopied(false);
-              }}
-              content={shareMenuContent}
-            >
+        <footer className="flex items-center gap-1 border-t px-2 py-1.5">
+          <div
+            ref={pickerRef}
+            className="relative"
+            onMouseEnter={() => {
+              clearClose();
+              setPickerOpen(true);
+            }}
+            onMouseLeave={() => {
+              clearClose();
+              closePickerTimer.current = window.setTimeout(() => setPickerOpen(false), 140);
+            }}
+          >
+            {pickerOpen && !reacting ? (
+              <div
+                role="menu"
+                aria-label={ta('choose_reaction_aria')}
+                className="absolute bottom-full left-0 z-50 mb-1 flex items-center gap-0.5 rounded-full bg-popover p-1 shadow-md ring-1 ring-foreground/10"
+              >
+                {reactionOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    role="menuitem"
+                    aria-label={option.label}
+                    title={option.label}
+                    onClick={() => react(option.key)}
+                    className={cn(
+                      'flex size-8 items-center justify-center rounded-full border-0 bg-transparent transition-transform hover:scale-110 hover:bg-accent',
+                      currentReaction === option.key && 'bg-accent'
+                    )}
+                    style={{ color: REACTION_COLOR[option.key] }}
+                  >
+                    {option.icon}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <ReactionBreakdownTooltip breakdown={item.metrics.reactionBreakdown}>
               <button
                 type="button"
-                className="flex items-center justify-center min-h-[36px] min-w-[36px] rounded-lg text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors"
-                aria-label={ta('share')}
-                onClick={stopPropagation}
+                className={footerButton}
+                style={currentReaction ? { color: REACTION_COLOR[currentReaction] } : undefined}
+                disabled={reacting}
+                aria-label={selectedReaction?.label || ta('like')}
+                aria-pressed={Boolean(currentReaction)}
+                onClick={() => react(currentReaction || 'like')}
+                onPointerDown={(event) => {
+                  if (event.pointerType !== 'touch' || reacting) return;
+                  clearLongPress();
+                  longPressTimer.current = window.setTimeout(() => setPickerOpen(true), 260);
+                }}
+                onPointerUp={clearLongPress}
+                onPointerCancel={clearLongPress}
+                onPointerLeave={clearLongPress}
               >
-                <ShareAltOutlined className="text-base" />
+                {selectedReaction?.icon || <ThumbsUp />}
+                <span>{item.metrics.reactions}</span>
               </button>
-            </Popover>
+            </ReactionBreakdownTooltip>
           </div>
 
           <button
             type="button"
-            className={`flex items-center gap-1.5 rounded-full min-h-[32px] px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
-              isBookmarked
-                ? 'bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)]'
-                : 'bg-[var(--ant-color-fill-tertiary)] text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-primary-bg)] hover:text-[var(--ant-color-primary)]'
-            }`}
-            disabled={saving}
-            onClick={(event) => {
-              event.stopPropagation();
-              void onSave?.(item.id);
-            }}
+            className={footerButton}
+            onMouseEnter={prefetch}
+            onClick={open}
+            aria-label={t('open_post')}
           >
-            <BookmarkIcon filled={isBookmarked} className="text-sm" />
-            <span>{isBookmarked ? ta('saved') : ta('save')}</span>
+            <MessageCircle />
+            <span>{item.metrics.comments}</span>
           </button>
-        </div>
-      </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className={footerButton} aria-label={ta('share')}>
+                <Share2 />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="top">
+              <DropdownMenuItem onSelect={() => void copyLink()}>
+                <Link2 /> {t('copy_link')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => shareTo('linkedin')}>{ta('share_to_linkedin')}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => shareTo('x')}>{ta('share_to_x')}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => shareTo('telegram')}>{ta('share_to_telegram')}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => shareTo('whatsapp')}>{ta('share_to_whatsapp')}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button
+            variant={isBookmarked ? 'secondary' : 'ghost'}
+            size="sm"
+            className="ml-auto"
+            disabled={saving}
+            aria-pressed={isBookmarked}
+            onClick={() => void onSave?.(item.id)}
+          >
+            {isBookmarked ? <Check /> : <BookmarkIcon filled={false} />}
+            {isBookmarked ? ta('saved') : ta('save')}
+          </Button>
+        </footer>
+      </article>
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('delete_post_confirm_title')}</DialogTitle>
+            <DialogDescription>{t('delete_post_confirm_content')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+              {t('cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => {
+                setConfirmDelete(false);
+                void onDeleteItem?.(item.id);
+              }}
+            >
+              {t('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

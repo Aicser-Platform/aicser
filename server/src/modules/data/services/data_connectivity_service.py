@@ -1072,6 +1072,18 @@ class DataConnectivityService:
 
                 df = pd.read_parquet(file_path)
                 return df.head(limit).to_dict("records")
+            elif file_format == "duckdb":
+                # A Prepare clean copy: its first table, like an Excel file's first sheet
+                import duckdb
+
+                from src.modules.prep.clean_copy import load_into
+
+                conn = duckdb.connect()
+                try:
+                    load_into(conn, file_path)
+                    return conn.execute(f"SELECT * FROM data LIMIT {int(limit)}").df().to_dict("records")
+                finally:
+                    conn.close()
             else:
                 logger.warning(f"⚠️ Unsupported file format: {file_format}")
                 return []

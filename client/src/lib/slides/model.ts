@@ -165,13 +165,26 @@ export const THEMES: Theme[] = [
 
 export const themeById = (id: string): Theme => THEMES.find((t) => t.id === id) ?? THEMES[0]!;
 
+/** PowerPoint's "Header & Footer": date, footer text and slide number along the bottom of each slide. */
+export const SlideFooterSchema = z.object({
+  text: z.string().max(200).default(''),
+  slideNumbers: z.boolean().default(false),
+  date: z.boolean().default(false),
+  /** Not on title slides (PowerPoint's "Don't show on title slide"). */
+  skipTitle: z.boolean().default(true),
+});
+export type SlideFooter = z.infer<typeof SlideFooterSchema>;
+
 export const PresentationBodySchema = z.object({
   themeId: z.string().default('office'),
   slides: z.array(SlideSchema).default([]),
+  /** Optional: presentations saved before page elements have none. */
+  footer: SlideFooterSchema.optional(),
 });
 export interface PresentationBody extends Record<string, unknown> {
   themeId: string;
   slides: Slide[];
+  footer?: SlideFooter;
 }
 
 export const presentationStore = officeStore<PresentationBody>(

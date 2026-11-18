@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildStep, formForStep, headerNames } from '../StepForm';
-import { stepSentence } from '../stepText';
+import { buildStep, formForStep, headerNames } from '@/lib/prep/stepForm';
+import { stepSentence } from '@/lib/prep/stepText';
 
 const t = (key: string, values?: Record<string, unknown>) => `${key}${values ? JSON.stringify(values) : ''}`;
 

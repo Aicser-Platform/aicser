@@ -683,18 +683,25 @@ async def save_ai_provider_key(
     workspace_id_val = (payload.workspace_id or "").strip()
     # If client sends masked value (••••...), keep existing key and only update model/endpoint
     existing_raw_value = None
+    # A personal key wins over the org key at runtime and in GET (it is what the
+    # dialog shows), so an edit must land on it or it never takes effect.
+    personal_entry = await _user_settings_repo.get_setting(user_id, f"provider_key.{key_normalized}")
+    publish_personal_to_org = False
     if use_org_scope and organization_id:
         existing_org_keys = await _get_org_ai_provider_settings(user_id, organization_id)
         existing_raw_value = existing_org_keys.get(key_normalized)
-        if not existing_raw_value and api_key_val.startswith("••••"):
+        if existing_raw_value and personal_entry is not None:
+            use_org_scope = False
+            existing_raw_value = personal_entry.value
+        elif not existing_raw_value and personal_entry is not None:
             # Backward compatibility: keys saved before org BYOK lived in the
-            # owner's personal settings. Let an owner/admin publish that masked
-            # existing key to the org without re-entering the raw secret.
-            personal_raw = await _user_settings_repo.get_setting(user_id, f"provider_key.{key_normalized}")
-            existing_raw_value = personal_raw.value if personal_raw else None
+            # owner's personal settings. Let an owner/admin publish that key to
+            # the org without re-entering the raw secret, then drop the personal
+            # copy so it stops shadowing the org key.
+            existing_raw_value = personal_entry.value
+            publish_personal_to_org = True
     else:
-        existing_raw = await _user_settings_repo.get_setting(user_id, f"provider_key.{key_normalized}")
-        existing_raw_value = existing_raw.value if existing_raw else None
+        existing_raw_value = personal_entry.value if personal_entry else None
     existing: dict = {}
     if existing_raw_value:
         try:
@@ -736,6 +743,8 @@ async def save_ai_provider_key(
         )
     if use_org_scope and organization_id:
         await _save_org_ai_provider_setting(organization_id, key_normalized, json.dumps(store))
+        if publish_personal_to_org:
+            await _user_settings_repo.delete_setting(user_id, f"provider_key.{key_normalized}")
         return {"success": True, "provider": key_normalized, "scope": "organization"}
     await _user_settings_repo.set_setting(user_id, f"provider_key.{key_normalized}", json.dumps(store))
     return {"success": True, "provider": key_normalized, "scope": "personal"}

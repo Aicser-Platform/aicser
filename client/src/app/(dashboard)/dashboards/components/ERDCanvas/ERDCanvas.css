@@ -3,9 +3,8 @@
 .erd-canvas-wrapper {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(circle, rgba(0, 105, 160, 0.13) 1px, transparent 1.2px) 0 0 / 24px 24px,
-    var(--ant-color-bg-container);
+  /* Plain surface: the dots are React Flow's Background, themed in styles/flow.css (as in Semantic models). */
+  background: rgb(var(--ui-background));
 }
 
 .erd-canvas-wrapper .react-flow {
@@ -115,17 +114,7 @@
   border-left: none !important;
 }
 
-.erd-canvas-wrapper .react-flow__controls {
-  margin: 18px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
-  overflow: hidden;
-}
-
-.erd-canvas-wrapper .react-flow__background {
-  opacity: 0;
-}
+/* Controls, background dots and minimap come from the shared flow theme (styles/flow.css), as in Semantic models. */
 
 /* ─── Toolbar ─────────────────────────────────────────────────────────────── */
 

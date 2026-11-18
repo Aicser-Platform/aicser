@@ -1,125 +1,148 @@
-'use client';
-
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+// Ported from ../aicser/client/src/components/prep/RecipeEditor.tsx @ 749d38d (see PORTING.md). UI rewritten
+// (AntD Table/Dropdown/Drawer/Modal → own grid, shadcn menus, sheet and dialog). Back on the web (desktop leaves them
+// out): AI answer and Predict steps (Enterprise models / AI decisions), lake-table previews (pipeline wizard).
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { Alert, Button, Checkbox, Drawer, Dropdown, Empty, Input, List, Modal, Segmented, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import type { MenuProps } from 'antd';
 import {
-  BulbOutlined,
-  ClearOutlined,
-  ExperimentOutlined,
-  FilterOutlined,
-  FunctionOutlined,
-  RobotOutlined,
-  GroupOutlined,
-  PlusOutlined,
-  SearchOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons';
+  ChevronLeft,
+  ChevronRight,
+  Eraser,
+  Filter,
+  FunctionSquare,
+  Lightbulb,
+  Loader2,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  Rows3,
+  Search,
+  Zap,
+  FlaskConical,
+} from 'lucide-react';
+import { isEnterpriseEdition } from '@/utils/appPaths';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   detectTypes,
   failedValues,
+  listSourceTables,
   previewSteps,
   profileSteps,
-  stepParts,
+  type CleaningLog,
+  type ColumnMeaning,
+  type Finding,
   type PrepStep,
   type SampleMode,
   type TypeSpec,
-  type ColumnMeaning,
-  type CleaningLog,
-  type Finding,
 } from '@/api/prep';
-import { appendStep, COLUMN_TYPES, friendlyType, moveStep, steps as build, type ColumnType } from './recipeSteps';
-import { ColumnMeaningModal } from './ColumnMeaningModal';
-import { stepSentence, toggleDisabled } from './stepText';
+import { Button } from '@/components/aicser-ui/button';
+import { Checkbox } from '@/components/aicser-ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/aicser-ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/aicser-ui/dropdown-menu';
+import { Input } from '@/components/aicser-ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/aicser-ui/native-select';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/aicser-ui/sheet';
+import { decisionKey } from '@/lib/prep/clean';
+import { tPrep as t, tRoles as tr, tRoot } from '@/lib/prep/i18n';
+import {
+  appendStep,
+  COLUMN_TYPES,
+  friendlyType,
+  moveStep,
+  steps as build,
+  type ColumnType,
+} from '@/lib/prep/recipeSteps';
+import { formForStep, type FormKind } from '@/lib/prep/stepForm';
+import { stepSentence, toggleDisabled } from '@/lib/prep/stepText';
+import { cn } from '@/lib/ui/utils';
+import { CleanPanel, type AugmentAction } from './CleanPanel';
 import { ColumnHeader } from './ColumnHeader';
-import { StepList } from './StepList';
-import { StepForm, formForStep, type FormKind } from './StepForm';
+import { ColumnMeaningDialog } from './ColumnMeaningDialog';
+import { Segmented, Tag } from './controls';
 import { SqlView, YamlView } from './CodeViews';
-import { CleanPanel, decisionKey, type AugmentAction } from './CleanPanel';
-import { getDataSourceSchema } from '@/api/dataSources';
-import { isEnterpriseEdition } from '@/utils/appPaths';
-import { SidePanel } from '@/components/layout/SidePanel';
-import './recipe-editor.css';
-
-const { Text } = Typography;
+import { MenuItems, type MenuEntry } from './menu';
+import { StepForm } from './StepForm';
+import { StepList } from './StepList';
 
 export type RecipeEditorProps = {
   dataSourceId: string;
   table?: string | null;
-  /** Preview a landed lake table (pipelines) instead of the live source. */
+  /** Web: preview against a loaded lake table (the pipeline wizard's bronze object) instead of the source. */
   lakeObjectId?: string | null;
   projectId?: string | null;
   steps: PrepStep[];
   onChange: (steps: PrepStep[]) => void;
   readOnly?: boolean;
   /** Column meaning (description, role, personal data); shown when the host can save it. */
-  columnMeta?: Record<string, ColumnMeaning>;
+  columnMeta?: Record<string, ColumnMeaning> | null;
   onColumnMetaChange?: (meta: Record<string, ColumnMeaning>) => Promise<void>;
-  /** The table this recipe produced, for adding columns to the semantic model. */
-  outputDataSourceId?: string | null;
   /** Names the cleaning report. */
   name?: string;
   /** The CLEAN panel's decisions and notes; saved when the host can. */
-  cleaning?: CleaningLog;
+  cleaning?: CleaningLog | null;
   onCleaningChange?: (log: CleaningLog) => Promise<void>;
 };
 
 const PREVIEW_LIMIT = 200;
+const PAGE = 100;
 const SAMPLE_ROWS: Record<SampleMode, number> = { first: 1000, random: 10000, full: 100000 };
 
 type FormState = { kind: FormKind; columns: string[]; editIndex?: number; detected?: TypeSpec } | null;
 
+const cellText = (value: unknown) => String(typeof value === 'object' ? JSON.stringify(value) : value);
+
 /**
- * Prepare's one editor: steps on the left, the data after the selected step in the middle,
- * the CLEAN panel (understand, fix, review, enrich, note) on the right. Every change shows what it did, can be edited, switched off
- * or undone. Used by the Prepare page, file upload and pipelines.
+ * Prepare's one editor: steps on the left, the data after the selected step in the middle, the CLEAN panel
+ * (understand, fix, review, enrich, note) on the right. Every change shows what it did, can be edited, switched off
+ * or undone.
  */
 export function RecipeEditor({
   dataSourceId,
-  table,
   lakeObjectId,
+  table,
   projectId,
   steps,
   onChange,
   readOnly = false,
   columnMeta,
   onColumnMetaChange,
-  outputDataSourceId,
   name,
   cleaning,
   onCleaningChange,
 }: RecipeEditorProps) {
   const [meaningFor, setMeaningFor] = useState<{ column: string; kind: string } | null>(null);
-  const tr = useTranslations('column_roles');
-  const t = useTranslations('prepare');
-  const tt = t as unknown as (k: string, v?: Record<string, string | number>) => string;
-  const tRoot = useTranslations();
   const [selected, setSelected] = useState<number | null>(null);
   const [selCols, setSelCols] = useState<string[]>([]);
   const [form, setForm] = useState<FormState>(null);
   const [view, setView] = useState<'steps' | 'yaml' | 'sql'>('steps');
   const [sampleMode, setSampleMode] = useState<SampleMode>('first');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
   const [failures, setFailures] = useState<{ step: number; column: string } | null>(null);
   const [detectOpen, setDetectOpen] = useState(false);
   const [detectPick, setDetectPick] = useState<string[]>([]);
   // Everything detected starts ticked; people untick what they disagree with.
   const [detectPicked, setDetectPicked] = useState(false);
+  const [cleanOpen, setCleanOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1280);
   const [history, setHistory] = useState<{ past: PrepStep[][]; future: PrepStep[][] }>({ past: [], future: [] });
 
   const sample = { sample_mode: sampleMode, sample_rows: SAMPLE_ROWS[sampleMode] };
-  const upTo = selected === null ? null : selected;
+  const upTo = selected;
   const visibleSteps = useMemo(() => (upTo === null ? steps : steps.slice(0, upTo + 1)), [steps, upTo]);
   const base = { data_source_id: dataSourceId, table, lake_object_id: lakeObjectId ?? null };
+  const key = [dataSourceId, table ?? null, lakeObjectId ?? null, projectId ?? null, sampleMode] as const;
 
   const commit = useCallback(
     (next: PrepStep[]) => {
       setHistory((h) => ({ past: [...h.past.slice(-49), steps], future: [] }));
       onChange(next);
     },
-    [onChange, steps],
+    [onChange, steps]
   );
   const undo = useCallback(() => {
     const prev = history.past[history.past.length - 1];
@@ -137,7 +160,7 @@ export function RecipeEditor({
   }, [history, onChange, steps]);
 
   useEffect(() => {
-    if (readOnly) return;
+    if (readOnly) return undefined;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
@@ -154,25 +177,27 @@ export function RecipeEditor({
     return () => window.removeEventListener('keydown', onKey);
   }, [readOnly, undo, redo]);
 
+  const visibleKey = JSON.stringify(visibleSteps);
+  const allKey = JSON.stringify(steps);
   const preview = useQuery({
-    queryKey: ['prep', 'preview', dataSourceId, table ?? null, lakeObjectId ?? null, projectId ?? null, sampleMode, JSON.stringify(visibleSteps)],
+    queryKey: ['prep', 'preview', ...key, visibleKey],
     queryFn: () => previewSteps({ ...base, steps: visibleSteps, limit: PREVIEW_LIMIT, ...sample }, projectId),
     placeholderData: (prev) => prev,
   });
   const fullStats = useQuery({
-    queryKey: ['prep', 'stats', dataSourceId, table ?? null, lakeObjectId ?? null, projectId ?? null, sampleMode, JSON.stringify(steps)],
+    queryKey: ['prep', 'stats', ...key, allKey],
     queryFn: () => previewSteps({ ...base, steps, limit: 1, ...sample }, projectId),
     enabled: upTo !== null,
     staleTime: 30_000,
   });
   const profile = useQuery({
-    queryKey: ['prep', 'profile', dataSourceId, table ?? null, lakeObjectId ?? null, projectId ?? null, sampleMode, JSON.stringify(visibleSteps)],
+    queryKey: ['prep', 'profile', ...key, visibleKey],
     queryFn: () => profileSteps({ ...base, steps: visibleSteps, ...sample }, projectId),
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   });
   const detect = useQuery({
-    queryKey: ['prep', 'detect', dataSourceId, table ?? null, lakeObjectId ?? null, projectId ?? null, sampleMode, JSON.stringify(visibleSteps)],
+    queryKey: ['prep', 'detect', ...key, visibleKey],
     queryFn: () => detectTypes({ ...base, steps: visibleSteps, ...sample }, projectId),
     enabled: detectOpen || form?.kind === 'type_date' || form?.kind === 'type_number',
     staleTime: 60_000,
@@ -180,26 +205,25 @@ export function RecipeEditor({
   // Other tables of this connection, for Merge and Append.
   const otherTables = useQuery({
     queryKey: ['prep', 'tables', dataSourceId],
-    queryFn: () => getDataSourceSchema(dataSourceId, 'source'),
+    queryFn: () => listSourceTables(dataSourceId),
     enabled: form?.kind === 'merge' || form?.kind === 'append',
     staleTime: 300_000,
-    select: (res) =>
-      (res.schema?.tables ?? []).map((tb: { name: string; schema?: string }) =>
-        tb.schema && !['public', 'main'].includes(tb.schema) ? `${tb.schema}.${tb.name}` : tb.name,
-      ),
   });
   const failureList = useQuery({
-    queryKey: ['prep', 'failures', dataSourceId, table ?? null, lakeObjectId ?? null, sampleMode, JSON.stringify(steps), failures?.step, failures?.column],
-    queryFn: () => failedValues({ ...base, steps, ...sample, step: failures!.step, column: failures!.column }, projectId),
+    queryKey: ['prep', 'failures', ...key, allKey, failures?.step, failures?.column],
+    queryFn: () =>
+      failedValues({ ...base, steps, ...sample, step: failures?.step ?? 0, column: failures?.column ?? '' }, projectId),
     enabled: Boolean(failures),
   });
 
   const stepErrors = preview.data?.step_errors ?? [];
   const errorAt = (i: number) => stepErrors.find((e) => e.step === i)?.message;
-  const stats = (upTo === null ? preview.data?.step_stats : fullStats.data?.step_stats) ?? preview.data?.step_stats ?? [];
+  const stats =
+    (upTo === null ? preview.data?.step_stats : fullStats.data?.step_stats) ?? preview.data?.step_stats ?? [];
   const changes = preview.data?.changes;
   const columnNames = useMemo(() => (preview.data?.columns ?? []).map((c) => c.name), [preview.data?.columns]);
   const dists = profile.data?.distributions ?? {};
+  const typeOf = (column: string) => friendlyType(preview.data?.columns.find((c) => c.name === column)?.type ?? '');
 
   /** Insert after the selected step (or at the end), like Power Query. */
   const add = (step: PrepStep) => {
@@ -227,151 +251,164 @@ export function RecipeEditor({
   const open = (kind: FormKind, columns: string[], detected?: TypeSpec) => setForm({ kind, columns, detected });
 
   const setType = (columns: string[], type: ColumnType) => {
+    const first = columns[0] ?? '';
     if (type === 'date' || type === 'datetime') {
-      open('type_date', columns, detect.data?.columns?.[columns[0]] ?? { type, formats: [] });
+      open('type_date', columns, detect.data?.columns[first] ?? { type, formats: [] });
       return;
     }
     if (type === 'number' || type === 'integer' || type === 'decimal') {
-      open('type_number', columns, detect.data?.columns?.[columns[0]] ?? { type, locale: 'us' });
+      open('type_number', columns, detect.data?.columns[first] ?? { type, locale: 'us' });
       return;
     }
     add(build.setType(columns, { type }));
   };
 
-  const columnMenu = (column: string): MenuProps['items'] => {
+  const item = (
+    key: string,
+    label: string,
+    onClick: () => void,
+    extra: Partial<Extract<MenuEntry, { onClick: () => void }>> = {}
+  ): MenuEntry => ({
+    key,
+    label,
+    onClick,
+    ...extra,
+  });
+
+  const columnMenu = (column: string): MenuEntry[] => {
     const cols = target(column);
     const many = cols.length > 1;
     return [
-      ...(many ? [{ key: 'count', disabled: true, label: t('applies_to', { count: cols.length }) }, { type: 'divider' as const }] : []),
-      ...(!many ? [{ key: 'rename', label: t('action_rename'), onClick: () => open('rename', [column]) }] : []),
+      ...(many
+        ? ([
+            { kind: 'label', key: 'count', label: t('applies_to', { count: cols.length }) },
+            { kind: 'divider', key: 'd0' },
+          ] as MenuEntry[])
+        : []),
+      ...(!many ? [item('rename', t('action_rename'), () => open('rename', [column]))] : []),
       ...(!many && onColumnMetaChange
-        ? [
-            {
-              key: 'meaning',
-              label: t('action_meaning'),
-              onClick: () => setMeaningFor({ column, kind: friendlyType((preview.data?.columns ?? []).find((c) => c.name === column)?.type ?? '') }),
-            },
-          ]
+        ? [item('meaning', t('action_meaning'), () => setMeaningFor({ column, kind: typeOf(column) }))]
         : []),
       {
+        kind: 'sub',
         key: 'type',
         label: t('action_change_type'),
         children: [
-          ...COLUMN_TYPES.map((type) => ({ key: `type-${type}`, label: t(`type_${type}`), onClick: () => setType(cols, type) })),
+          ...COLUMN_TYPES.map((type) => item(`type-${type}`, t(`type_${type}`), () => setType(cols, type))),
           // Category is how a column is used, not how it is stored: it groups rows by its values.
           ...(onColumnMetaChange
-            ? [
-                { type: 'divider' as const },
-                {
-                  key: 'type-category',
-                  label: <Tooltip title={tr('category_hint')} placement="right">{tr('use_as_category')}</Tooltip>,
-                  onClick: () =>
+            ? ([
+                { kind: 'divider', key: 'd-type' },
+                item(
+                  'type-category',
+                  tr('use_as_category'),
+                  () =>
                     void onColumnMetaChange({
                       ...(columnMeta ?? {}),
-                      ...Object.fromEntries(cols.map((c) => [c, { ...(columnMeta?.[c] ?? {}), role: 'category' as const }])),
+                      ...Object.fromEntries(
+                        cols.map((c) => [c, { ...(columnMeta?.[c] ?? {}), role: 'category' as const }])
+                      ),
                     }),
-                },
-              ]
+                  { title: tr('category_hint') }
+                ),
+              ] as MenuEntry[])
             : []),
         ],
       },
       {
+        kind: 'sub',
         key: 'clean',
         label: t('group_clean'),
         children: [
-          { key: 'trim', label: t('action_trim'), onClick: () => add(build.trim(cols)) },
-          { key: 'empty', label: t('action_empty_markers'), onClick: () => add(build.emptyMarkers(cols)) },
-          { key: 'case', label: t('action_case'), onClick: () => open('change_case', cols) },
-          { key: 'currency', label: t('action_strip_currency'), onClick: () => add(build.stripCurrency(cols)) },
-          { key: 'replace', label: t('action_replace'), onClick: () => open('replace', cols) },
-          { key: 'fill', label: t('action_fill'), onClick: () => open('fill', cols) },
-          { key: 'mask', label: t('action_mask'), onClick: () => open('mask', cols) },
+          item('trim', t('action_trim'), () => add(build.trim(cols))),
+          item('empty', t('action_empty_markers'), () => add(build.emptyMarkers(cols))),
+          item('case', t('action_case'), () => open('change_case', cols)),
+          item('currency', t('action_strip_currency'), () => add(build.stripCurrency(cols))),
+          item('replace', t('action_replace'), () => open('replace', cols)),
+          item('fill', t('action_fill'), () => open('fill', cols)),
+          item('mask', t('action_mask'), () => open('mask', cols)),
         ],
       },
       ...(!many
-        ? [
+        ? ([
             {
+              kind: 'sub',
               key: 'transform',
               label: t('group_transform'),
               children: [
-                { key: 'split', label: t('action_split'), onClick: () => open('split', [column]) },
-                { key: 'extract', label: t('action_extract'), onClick: () => open('extract', [column]) },
-                { key: 'flatten', label: t('action_flatten_json'), onClick: () => open('flatten_json', [column]) },
-                { key: 'split_rows', label: t('action_split_rows'), onClick: () => open('split_rows', [column]) },
-                { key: 'window', label: t('action_window'), onClick: () => open('window', [column]) },
-                { key: 'bin', label: t('action_bin'), onClick: () => open('bin', [column]) },
+                item('split', t('action_split'), () => open('split', [column])),
+                item('extract', t('action_extract'), () => open('extract', [column])),
+                item('flatten', t('action_flatten_json'), () => open('flatten_json', [column])),
+                item('split_rows', t('action_split_rows'), () => open('split_rows', [column])),
+                item('window', t('action_window'), () => open('window', [column])),
+                item('bin', t('action_bin'), () => open('bin', [column])),
               ],
             },
-          ]
-        : [{ key: 'concat', label: t('action_concat'), onClick: () => open('concat', cols) }]),
-      ...(isEnterpriseEdition()
-        ? [{ key: 'ai_answer', icon: <ThunderboltOutlined />, label: t('action_ask_ai_values'), onClick: () => open('ai_answer', cols) }]
-        : []),
+          ] as MenuEntry[])
+        : [item('concat', t('action_concat'), () => open('concat', cols))]),
       {
+        kind: 'sub',
         key: 'rows',
         label: t('group_rows'),
         children: [
-          { key: 'filter', label: t('action_filter'), onClick: () => open('filter_rows', cols) },
-          { key: 'not_empty', label: t('action_remove_empty_rows'), onClick: () => add(build.removeEmptyRows(cols)) },
-          { key: 'dedupe', label: t('action_dedupe_by'), onClick: () => add(build.dedupeBy(cols)) },
+          item('filter', t('action_filter'), () => open('filter_rows', cols)),
+          item('not_empty', t('action_remove_empty_rows'), () => add(build.removeEmptyRows(cols))),
+          item('dedupe', t('action_dedupe_by'), () => add(build.dedupeBy(cols))),
           ...(!many
             ? [
-                { key: 'top_n', label: t('action_top_n'), onClick: () => open('top_n', [column]) },
-                { key: 'sort_asc', label: t('action_sort_asc'), onClick: () => add(build.sort(column, false)) },
-                { key: 'sort_desc', label: t('action_sort_desc'), onClick: () => add(build.sort(column, true)) },
+                item('top_n', t('action_top_n'), () => open('top_n', [column])),
+                item('sort_asc', t('action_sort_asc'), () => add(build.sort(column, false))),
+                item('sort_desc', t('action_sort_desc'), () => add(build.sort(column, true))),
               ]
             : []),
         ],
       },
-      { type: 'divider' },
-      { key: 'keep', label: t('action_keep_only'), onClick: () => add(build.keepOnly(cols)) },
-      {
-        key: 'remove',
-        danger: true,
-        label: many ? t('action_remove_columns', { count: cols.length }) : t('action_remove_column'),
-        onClick: () => add(build.remove(cols)),
-      },
+      { kind: 'divider', key: 'd1' },
+      item('keep', t('action_keep_only'), () => add(build.keepOnly(cols))),
+      item(
+        'remove',
+        many ? t('action_remove_columns', { count: cols.length }) : t('action_remove_column'),
+        () => add(build.remove(cols)),
+        { danger: true }
+      ),
     ];
   };
 
-  const addMenu: MenuProps['items'] = [
-    { key: 'formula', icon: <FunctionOutlined />, label: t('add_formula'), onClick: () => open('formula', selCols) },
-    { key: 'conditional', label: t('add_conditional'), onClick: () => open('conditional', selCols) },
-    { key: 'concat', label: t('action_concat'), onClick: () => open('concat', selCols) },
+  const addMenu: MenuEntry[] = [
+    item('formula', t('add_formula'), () => open('formula', selCols), { icon: <FunctionSquare /> }),
+    item('conditional', t('add_conditional'), () => open('conditional', selCols)),
+    item('concat', t('action_concat'), () => open('concat', selCols)),
   ];
-  // A model's or the AI's answer as a new column (Enterprise: Models, AI Decisions).
-  const aiMenu: MenuProps['items'] = [
-    { key: 'ai_answer', icon: <ThunderboltOutlined />, label: t('add_ai_answer'), onClick: () => open('ai_answer', selCols) },
-    { key: 'predict', icon: <ExperimentOutlined />, label: t('add_predict'), onClick: () => open('predict', selCols) },
-  ];
-  const tableMenu: MenuProps['items'] = [
+  const tableMenu: MenuEntry[] = [
     {
+      kind: 'sub',
       key: 'sheet',
       label: t('group_sheet'),
       children: [
-        { key: 'header_rows', label: t('action_header_rows'), onClick: () => open('header_rows', []) },
-        { key: 'remove_rows', label: t('action_remove_rows'), onClick: () => open('remove_rows', []) },
+        item('header_rows', t('action_header_rows'), () => open('header_rows', [])),
+        item('remove_rows', t('action_remove_rows'), () => open('remove_rows', [])),
       ],
     },
-    { key: 'expand_rows', label: t('action_expand_rows'), onClick: () => open('expand_rows', selCols) },
-    { key: 'window', label: t('action_window'), onClick: () => open('window', selCols) },
-    { key: 'index', label: t('action_index'), onClick: () => open('index', []) },
-    { type: 'divider' },
-    { key: 'checks', label: t('action_checks'), onClick: () => open('checks', selCols) },
-    { key: 'merge', label: t('action_merge'), onClick: () => open('merge', selCols) },
-    { key: 'append', label: t('action_append'), onClick: () => open('append', []) },
-    { key: 'pivot', label: t('action_pivot'), onClick: () => open('pivot', selCols) },
-    { type: 'divider' },
-    { key: 'dedupe_rows', label: t('action_dedupe_rows'), onClick: () => add(build.dedupeRows()) },
-    { key: 'rename_all', label: t('action_rename_all'), onClick: () => open('rename_all', []) },
-    { key: 'group', label: t('action_group'), onClick: () => open('group', selCols) },
-    { key: 'unpivot', label: t('action_unpivot'), onClick: () => open('unpivot', selCols) },
-    { type: 'divider' },
-    { key: 'sql', label: t('action_sql'), onClick: () => open('sql', []) },
+    item('expand_rows', t('action_expand_rows'), () => open('expand_rows', selCols)),
+    item('window', t('action_window'), () => open('window', selCols)),
+    item('index', t('action_index'), () => open('index', [])),
+    { kind: 'divider', key: 'd1' },
+    item('checks', t('action_checks'), () => open('checks', selCols)),
+    item('merge', t('action_merge'), () => open('merge', selCols)),
+    item('append', t('action_append'), () => open('append', [])),
+    item('pivot', t('action_pivot'), () => open('pivot', selCols)),
+    { kind: 'divider', key: 'd2' },
+    item('dedupe_rows', t('action_dedupe_rows'), () => add(build.dedupeRows())),
+    item('rename_all', t('action_rename_all'), () => open('rename_all', [])),
+    item('group', t('action_group'), () => open('group', selCols)),
+    item('unpivot', t('action_unpivot'), () => open('unpivot', selCols)),
+    { kind: 'divider', key: 'd3' },
+    item('sql', t('action_sql'), () => open('sql', [])),
   ];
 
   const editStep = (i: number) => {
-    const kind = formForStep(steps[i]);
+    const step = steps[i];
+    const kind = step ? formForStep(step) : null;
     if (!kind) {
       setView('yaml');
       return;
@@ -382,56 +419,19 @@ export function RecipeEditor({
   const changed = changes?.changed ?? {};
   const added = new Set(changes?.added ?? []);
   const q = search.trim().toLowerCase();
-  const rows = (preview.data?.rows ?? []).map((r, i) => ({ __i: i, ...r }));
-  const filteredRows = q ? rows.filter((r) => Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q))) : rows;
-
-  const gridColumns = (preview.data?.columns ?? []).map((col) => ({
-    key: col.name,
-    dataIndex: col.name,
-    ellipsis: true,
-    width: 160,
-    onHeaderCell: () => ({ 'data-col': col.name }) as React.HTMLAttributes<HTMLElement>,
-    title: (
-      <ColumnHeader
-        name={col.name}
-        engineType={col.type}
-        dist={dists[col.name]}
-        selected={selCols.includes(col.name)}
-        isNew={added.has(col.name)}
-        meaning={columnMeta?.[col.name]}
-        readOnly={readOnly}
-        menu={columnMenu(col.name)}
-        onSelect={(additive) =>
-          setSelCols((cur) =>
-            additive
-              ? cur.includes(col.name)
-                ? cur.filter((c) => c !== col.name)
-                : [...cur, col.name]
-              : cur.length === 1 && cur[0] === col.name
-                ? []
-                : [col.name],
-          )
-        }
-      />
-    ),
-    onCell: (row: { __i: number }) => ({
-      className: [
-        changed[col.name]?.includes(row.__i) ? 'recipe-editor__cell--changed' : '',
-        added.has(col.name) ? 'recipe-editor__cell--added' : '',
-        selCols.includes(col.name) ? 'recipe-editor__cell--selected' : '',
-      ]
-        .filter(Boolean)
-        .join(' '),
-    }),
-    render: (value: unknown) =>
-      value === null || value === undefined ? (
-        <Text type="secondary" italic>
-          {t('empty_cell')}
-        </Text>
-      ) : (
-        String(typeof value === 'object' ? JSON.stringify(value) : value)
-      ),
-  }));
+  const rows = (preview.data?.rows ?? []).map((r, i) => ({ i, r }));
+  const filteredRows = q
+    ? rows.filter(({ r }) =>
+        Object.values(r).some((v) =>
+          String(v ?? '')
+            .toLowerCase()
+            .includes(q)
+        )
+      )
+    : rows;
+  const pages = Math.max(1, Math.ceil(filteredRows.length / PAGE));
+  const pageNow = Math.min(page, pages - 1);
+  const pageRows = filteredRows.slice(pageNow * PAGE, pageNow * PAGE + PAGE);
 
   const findings = profile.data?.findings ?? [];
   const removedCols = changes?.removed ?? [];
@@ -443,59 +443,67 @@ export function RecipeEditor({
     setDetectPick(cols);
   };
   const applyAll = () => {
-    const fixes = findings.map((f) => f.suggested_step).filter(Boolean) as PrepStep[];
+    const fixes = findings.map((f) => f.suggested_step).filter((s): s is PrepStep => Boolean(s));
     if (!fixes.length) return;
     commit(fixes.reduce((acc, s) => appendStep(acc, s), steps));
     setSelected(null);
   };
 
-  const healthTag = profile.data && profile.data.health != null ? (
-    <Tag color={profile.data.health >= 80 ? 'success' : profile.data.health >= 50 ? 'warning' : 'error'}>
-      {t('health', { score: profile.data.health })}
-    </Tag>
-  ) : null;
-  const findingText = (f: Finding) =>
-    tRoot(
-      f.message_key as never,
-      Object.fromEntries(
-        Object.entries(f.params).map(([k, v]) => [
-          k,
-          k === 'type' ? t(`type_${String(v)}`).toLowerCase() : Array.isArray(v) ? v.join(' → ') : (v as never),
-        ]),
-      ) as never,
-    );
+  const health = profile.data?.health;
+  const findingText = useCallback(
+    (f: Finding) =>
+      tRoot(
+        f.message_key,
+        Object.fromEntries(
+          Object.entries(f.params).map(([k, v]) => [
+            k,
+            k === 'type' ? t(`type_${String(v)}`).toLowerCase() : Array.isArray(v) ? v.join(' → ') : String(v ?? ''),
+          ])
+        )
+      ),
+    []
+  );
   const openIssues =
     findings.filter((f) => f.suggested_step).length +
     findings.filter((f) => !f.suggested_step && !cleaning?.decisions?.[decisionKey(f)]).length;
   const augment: AugmentAction[] = [
-    { key: 'formula', icon: <FunctionOutlined />, label: t('add_formula'), onClick: () => open('formula', selCols) },
+    { key: 'formula', icon: <FunctionSquare />, label: t('add_formula'), onClick: () => open('formula', selCols) },
     { key: 'conditional', label: t('add_conditional'), onClick: () => open('conditional', selCols) },
     { key: 'concat', label: t('action_concat'), onClick: () => open('concat', selCols) },
     { key: 'split', label: t('action_split'), needsColumn: true, onClick: () => open('split', selCols.slice(0, 1)) },
-    { key: 'extract', label: t('action_extract'), needsColumn: true, onClick: () => open('extract', selCols.slice(0, 1)) },
+    {
+      key: 'extract',
+      label: t('action_extract'),
+      needsColumn: true,
+      onClick: () => open('extract', selCols.slice(0, 1)),
+    },
     { key: 'merge', label: t('action_merge'), onClick: () => open('merge', selCols) },
     { key: 'append', label: t('action_append'), onClick: () => open('append', []) },
     { key: 'group', label: t('action_group'), onClick: () => open('group', selCols) },
+    // Web (Enterprise): AI decisions and prediction models the project can use.
     ...(isEnterpriseEdition()
       ? [
-          { key: 'ai_answer', icon: <ThunderboltOutlined />, label: t('add_ai_answer'), onClick: () => open('ai_answer', selCols) },
-          { key: 'predict', icon: <ExperimentOutlined />, label: t('add_predict'), onClick: () => open('predict', selCols) },
+          { key: 'ai_answer', icon: <Zap />, label: t('add_ai_answer'), onClick: () => open('ai_answer', selCols) },
+          { key: 'predict', icon: <FlaskConical />, label: t('add_predict'), onClick: () => open('predict', selCols) },
         ]
       : []),
   ];
   const showColumn = (column: string) => {
     setSelCols([column]);
     requestAnimationFrame(() => {
-      const th = Array.from(document.querySelectorAll<HTMLElement>('.recipe-editor__grid th[data-col]')).find((el) => el.dataset.col === column);
+      const th = Array.from(document.querySelectorAll<HTMLElement>('[data-prep-col]')).find(
+        (el) => el.dataset.prepCol === column
+      );
       th?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
     });
   };
+  const failureStep = failures ? steps[failures.step] : undefined;
 
   return (
-    <div className="recipe-editor">
+    <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-card">
       <StepList
         steps={steps}
-        table={preview.data?.table ?? table ?? '…'}
+        table={preview.data?.table || table || '…'}
         selected={selected}
         stats={stats}
         errorAt={errorAt}
@@ -504,7 +512,10 @@ export function RecipeEditor({
         canRedo={history.future.length > 0}
         onSelect={setSelected}
         onEdit={editStep}
-        onToggle={(i) => replaceAt(i, toggleDisabled(steps[i]))}
+        onToggle={(i) => {
+          const step = steps[i];
+          if (step) replaceAt(i, toggleDisabled(step));
+        }}
         onMove={(i, d) => commit(moveStep(steps, i, d))}
         onRemove={(i) => {
           commit(steps.filter((_, idx) => idx !== i));
@@ -515,128 +526,145 @@ export function RecipeEditor({
         onShowFailures={(step, column) => setFailures({ step, column })}
       />
 
-      <section className="recipe-editor__grid">
-        <div className="recipe-editor__toolbar">
-          {!readOnly ? (
-            <Space wrap size={6}>
-              <Dropdown menu={{ items: addMenu }} trigger={['click']}>
-                <Button size="small" type="primary" icon={<PlusOutlined />}>
-                  {t('add_column')}
-                </Button>
-              </Dropdown>
-              <Button size="small" icon={<FilterOutlined />} onClick={() => open('filter_rows', selCols)}>
-                {t('action_filter')}
+      <section aria-label={t('view_data')} className="flex min-w-0 flex-1 flex-col gap-2 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {!readOnly && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus /> {t('add_column')}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <MenuItems items={addMenu} />
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button size="sm" variant="outline" onClick={() => open('filter_rows', selCols)}>
+                <Filter /> {t('action_filter')}
               </Button>
               <Button
-                size="small"
-                icon={<ThunderboltOutlined />}
+                size="sm"
+                variant="outline"
                 onClick={() => {
                   setDetectPick([]);
                   setDetectPicked(false);
                   setDetectOpen(true);
                 }}
               >
-                {t('detect_types')}
+                <Zap /> {t('detect_types')}
               </Button>
-              {isEnterpriseEdition() ? (
-                <Dropdown menu={{ items: aiMenu }} trigger={['click']}>
-                  <Button size="small" icon={<RobotOutlined />}>{t('ai_steps')}</Button>
-                </Dropdown>
-              ) : null}
-              <Dropdown menu={{ items: tableMenu }} trigger={['click']}>
-                <Button size="small" icon={<GroupOutlined />}>
-                  {t('table_actions')}
-                </Button>
-              </Dropdown>
-            </Space>
-          ) : (
-            <span />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Rows3 /> {t('table_actions')}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <MenuItems items={tableMenu} />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
           )}
-          <Input
-            size="small"
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder={t('search_rows')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 170 }}
-            aria-label={t('search_rows')}
-          />
+          <div className="relative ml-auto">
+            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="h-7 w-44 pl-7 text-xs"
+              placeholder={t('search_rows')}
+              aria-label={t('search_rows')}
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+            />
+          </div>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={t('clean.title')}
+            title={t('clean.title')}
+            aria-pressed={cleanOpen}
+            onClick={() => setCleanOpen((o) => !o)}
+          >
+            {cleanOpen ? <PanelRightClose /> : <PanelRightOpen />}
+          </Button>
         </div>
 
-        {selCols.length > 1 && !readOnly ? (
-          <div className="recipe-editor__selection">
-            <Text strong>{t('selected_columns', { count: selCols.length })}</Text>
-            <Dropdown menu={{ items: columnMenu(selCols[0]) }} trigger={['click']}>
-              <Button size="small">{t('actions')}</Button>
-            </Dropdown>
-            <Button size="small" type="text" icon={<ClearOutlined />} onClick={() => setSelCols([])}>
-              {t('clear_selection')}
+        {selCols.length > 1 && !readOnly && (
+          <div className="flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-1.5 text-sm">
+            <span className="font-medium">{t('selected_columns', { count: selCols.length })}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="xs" variant="outline">
+                  {t('actions')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <MenuItems items={columnMenu(selCols[0] ?? '')} />
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button size="xs" variant="ghost" onClick={() => setSelCols([])}>
+              <Eraser /> {t('clear_selection')}
             </Button>
           </div>
-        ) : null}
+        )}
 
-        <div className="recipe-editor__grid-meta">
-          <Text type="secondary">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground" role="status">
             {preview.data
               ? t('preview_meta', {
                   rows: preview.data.rows.length,
                   columns: preview.data.columns.length,
                   sample: preview.data.sample_rows,
-                  mode: t(`sample_label_${preview.data.sample_mode ?? 'first'}`),
+                  mode: t(`sample_label_${preview.data.sample_mode}`),
                 })
               : t('loading_preview')}
-          </Text>
-          {preview.data?.sampled ? <Tag color="gold">{t('sample_partial')}</Tag> : null}
-          {selected !== null && selected >= 0 && changes ? (
-            <Space size={4} wrap>
-              <Text type="secondary">{t('this_step')}</Text>
-              {changedCount ? <Tag color="blue">{t('cells_changed', { count: changedCount })}</Tag> : null}
-              {changes.added.length ? <Tag color="green">{t('stat_added', { count: changes.added.length })}</Tag> : null}
+          </span>
+          {preview.isFetching && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />}
+          {preview.data?.sampled && <Tag tone="warn">{t('sample_partial')}</Tag>}
+          {selected !== null && selected >= 0 && changes && (
+            <span className="flex flex-wrap items-center gap-1">
+              <span className="text-muted-foreground">{t('this_step')}</span>
+              {changedCount ? <Tag tone="info">{t('cells_changed', { count: changedCount })}</Tag> : null}
+              {changes.added.length ? <Tag tone="good">{t('stat_added', { count: changes.added.length })}</Tag> : null}
               {removedCols.length ? (
-                <Tooltip title={removedCols.join(', ')}>
-                  <Tag>{t('stat_removed', { count: removedCols.length })}</Tag>
-                </Tooltip>
+                <Tag title={removedCols.join(', ')}>{t('stat_removed', { count: removedCols.length })}</Tag>
               ) : null}
-            </Space>
-          ) : null}
+            </span>
+          )}
           {preview.data?.quarantined_count ? (
-            <Tag color="warning">{t('set_aside_count', { count: preview.data.quarantined_count })}</Tag>
+            <Tag tone="warn">{t('set_aside_count', { count: preview.data.quarantined_count })}</Tag>
           ) : null}
-          <span className="recipe-editor__spacer" />
-          <Space wrap size={6} className="recipe-editor__views">
-            {/* One compact choice (first rows by default) instead of three buttons. */}
-            <Tooltip title={t('sample_hint')} placement="top">
-              <Select
-                size="small"
-                value={sampleMode}
-                onChange={(v) => setSampleMode(v as SampleMode)}
-                options={[
-                  { value: 'first', label: t('sample_first') },
-                  { value: 'random', label: t('sample_random') },
-                  { value: 'full', label: t('sample_full') },
-                ]}
-                popupMatchSelectWidth={false}
-                style={{ width: 118 }}
-                aria-label={t('sample_hint')}
-              />
-            </Tooltip>
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            <NativeSelect
+              size="sm"
+              title={t('sample_hint')}
+              aria-label={t('sample_hint')}
+              value={sampleMode}
+              onChange={(e) => setSampleMode(e.target.value as SampleMode)}
+            >
+              <NativeSelectOption value="first">{t('sample_first')}</NativeSelectOption>
+              <NativeSelectOption value="random">{t('sample_random')}</NativeSelectOption>
+              <NativeSelectOption value="full">{t('sample_full')}</NativeSelectOption>
+            </NativeSelect>
             <Segmented
-              size="small"
+              size="xs"
+              label={t('view_data')}
               value={view}
-              onChange={(v) => setView(v as 'steps' | 'yaml' | 'sql')}
+              onChange={setView}
               options={[
                 { value: 'steps', label: t('view_data') },
                 { value: 'yaml', label: t('view_yaml') },
                 { value: 'sql', label: t('view_sql') },
               ]}
             />
-          </Space>
+          </span>
         </div>
 
         {view === 'yaml' ? (
           <YamlView
-            key={JSON.stringify(steps)}
+            key={allKey}
             steps={steps}
             readOnly={readOnly}
             onApply={(next) => {
@@ -656,80 +684,164 @@ export function RecipeEditor({
           />
         ) : (
           <>
-            {stepErrors.length > 0 ? (
-              <Alert
-                type="error"
-                showIcon
-                message={t('step_failed', { step: stepErrors[0].step + 1 })}
-                description={stepErrors[0].message}
-                style={{ marginBottom: 8 }}
-              />
-            ) : null}
-            <Table
-              size="small"
-              rowKey="__i"
-              columns={gridColumns}
-              dataSource={filteredRows}
-              loading={preview.isFetching}
-              pagination={{ pageSize: 100, showSizeChanger: false, size: 'small' }}
-              scroll={{ x: 'max-content', y: 'calc(100dvh - 310px)' }}
-              locale={{ emptyText: preview.isError ? t('preview_error') : <Empty description={t('no_rows')} /> }}
-            />
+            {stepErrors[0] && (
+              <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-2 text-sm">
+                <p className="font-medium text-destructive">{t('step_failed', { step: stepErrors[0].step + 1 })}</p>
+                <p>{stepErrors[0].message}</p>
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-auto rounded-lg border">
+              <table aria-label={t('view_data')} className="text-sm">
+                <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_var(--border)]">
+                  <tr>
+                    {(preview.data?.columns ?? []).map((col) => (
+                      <th
+                        key={col.name}
+                        data-prep-col={col.name}
+                        className={cn(
+                          'border-r px-2 text-left align-top font-normal',
+                          selCols.includes(col.name) && 'bg-primary/10',
+                          added.has(col.name) && 'bg-(--status-good)/10'
+                        )}
+                      >
+                        <ColumnHeader
+                          name={col.name}
+                          engineType={col.type}
+                          dist={dists[col.name]}
+                          selected={selCols.includes(col.name)}
+                          isNew={added.has(col.name)}
+                          meaning={columnMeta?.[col.name]}
+                          readOnly={readOnly}
+                          menu={columnMenu(col.name)}
+                          onSelect={(additive) =>
+                            setSelCols((cur) =>
+                              additive
+                                ? cur.includes(col.name)
+                                  ? cur.filter((c) => c !== col.name)
+                                  : [...cur, col.name]
+                                : cur.length === 1 && cur[0] === col.name
+                                  ? []
+                                  : [col.name]
+                            )
+                          }
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.map(({ i, r }) => (
+                    <tr key={i} className="border-t">
+                      {(preview.data?.columns ?? []).map((col) => {
+                        const value = r[col.name];
+                        return (
+                          <td
+                            key={col.name}
+                            className={cn(
+                              'max-w-60 truncate border-r px-2 py-1',
+                              changed[col.name]?.includes(i) && 'bg-primary/15',
+                              added.has(col.name) && 'bg-(--status-good)/10',
+                              selCols.includes(col.name) && 'bg-primary/5'
+                            )}
+                          >
+                            {value === null || value === undefined ? (
+                              <em className="text-muted-foreground">{t('empty_cell')}</em>
+                            ) : (
+                              cellText(value)
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!pageRows.length && (
+                <p className="p-6 text-center text-sm text-muted-foreground">
+                  {preview.isError
+                    ? `${t('preview_error')} ${preview.error instanceof Error ? preview.error.message : ''}`
+                    : preview.isLoading
+                      ? t('loading_preview')
+                      : t('no_rows')}
+                </p>
+              )}
+            </div>
+            {pages > 1 && (
+              <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="Previous page"
+                  disabled={pageNow === 0}
+                  onClick={() => setPage(pageNow - 1)}
+                >
+                  <ChevronLeft />
+                </Button>
+                {pageNow + 1} / {pages}
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="Next page"
+                  disabled={pageNow >= pages - 1}
+                  onClick={() => setPage(pageNow + 1)}
+                >
+                  <ChevronRight />
+                </Button>
+              </div>
+            )}
           </>
         )}
       </section>
 
-      {/* Starts folded on narrow screens, where the grid needs the width; a click away. */}
-      <SidePanel
-        id="prepare.clean"
-        side="right"
-        title={t('clean.title')}
-        icon={<BulbOutlined />}
-        count={openIssues}
-        width={300}
-        defaultCollapsed={() => typeof window !== 'undefined' && window.innerWidth < 1280}
-        className="recipe-editor__suggest"
-        extra={healthTag}
-      >
-        <CleanPanel
-          name={name ?? table ?? ''}
-          table={preview.data?.table ?? table ?? ''}
-          rowCount={profile.data?.profile?.row_count}
-          sampled={profile.data?.profile?.sampled}
-          columns={preview.data?.columns ?? []}
-          dists={dists}
-          findings={findings}
-          loading={profile.isFetching}
-          error={profile.data?.error}
-          readOnly={readOnly}
-          columnMeta={columnMeta}
-          cleaning={cleaning}
-          onCleaningChange={readOnly ? undefined : onCleaningChange}
-          stepSentences={steps.map((step) => stepSentence(step, tt))}
-          findingText={findingText}
-          augment={augment}
-          hasSelection={selCols.length > 0}
-          onApply={(step) => add(step)}
-          onApplyAll={applyAll}
-          onSelectColumn={showColumn}
-          onMeaning={
-            onColumnMetaChange
-              ? (column) => setMeaningFor({ column, kind: friendlyType((preview.data?.columns ?? []).find((c) => c.name === column)?.type ?? '') })
-              : undefined
-          }
-          onExclude={(column) => open('filter_rows', [column])}
-        />
-      </SidePanel>
+      {cleanOpen && (
+        <aside aria-label={t('clean.title')} className="flex w-80 shrink-0 flex-col border-l bg-card/40">
+          <header className="flex items-center gap-2 border-b px-3 py-2">
+            <Lightbulb className="size-4 text-primary" aria-hidden="true" />
+            <h3 className="flex-1 text-sm font-semibold">
+              {t('clean.title')}{' '}
+              {openIssues ? <span className="font-normal text-muted-foreground">{openIssues}</span> : null}
+            </h3>
+            {health != null && (
+              <Tag tone={health >= 80 ? 'good' : health >= 50 ? 'warn' : 'bad'}>{t('health', { score: health })}</Tag>
+            )}
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <CleanPanel
+              name={name ?? table ?? ''}
+              table={preview.data?.table || table || ''}
+              rowCount={profile.data?.profile?.row_count}
+              sampled={profile.data?.profile?.sampled}
+              columns={preview.data?.columns ?? []}
+              dists={dists}
+              findings={findings}
+              loading={profile.isFetching}
+              error={profile.data?.error}
+              readOnly={readOnly}
+              columnMeta={columnMeta}
+              cleaning={cleaning}
+              onCleaningChange={readOnly ? undefined : onCleaningChange}
+              stepSentences={steps.map((step) => stepSentence(step, t))}
+              findingText={findingText}
+              augment={augment}
+              hasSelection={selCols.length > 0}
+              onApply={(step) => add(step)}
+              onApplyAll={applyAll}
+              onSelectColumn={showColumn}
+              onMeaning={onColumnMetaChange ? (column) => setMeaningFor({ column, kind: typeOf(column) }) : undefined}
+              onExclude={(column) => open('filter_rows', [column])}
+            />
+          </div>
+        </aside>
+      )}
 
-      {form ? (
+      {form && (
         <StepForm
           key={`${form.kind}-${form.editIndex ?? 'new'}`}
-          open
           kind={form.kind}
           columns={columnNames}
           selected={form.columns}
           existing={form.editIndex !== undefined ? steps[form.editIndex] : undefined}
-          detected={form.detected ?? (form.columns[0] ? detect.data?.columns?.[form.columns[0]] : undefined)}
+          detected={form.detected ?? (form.columns[0] ? detect.data?.columns[form.columns[0]] : undefined)}
           tables={otherTables.data ?? []}
           before={preview.data?.rows ?? []}
           runDraft={(step) => runDraft(step, form.editIndex)}
@@ -740,97 +852,112 @@ export function RecipeEditor({
             setForm(null);
           }}
         />
-      ) : null}
+      )}
 
-      <Modal
-        open={detectOpen}
-        title={t('detect_types')}
-        onCancel={() => setDetectOpen(false)}
-        okText={t('apply_types', { count: picked.length })}
-        okButtonProps={{ disabled: picked.length === 0 }}
-        onOk={() => {
-          const columns = Object.fromEntries(
-            detected
-              .filter(([c]) => picked.includes(c))
-              .map(([c, spec]) => [
-                c,
-                Object.fromEntries(Object.entries(spec).filter(([k]) => !['coverage', 'ambiguous', 'failing'].includes(k))),
-              ]),
-          );
-          add({ set_types: { columns } });
-          setDetectOpen(false);
-        }}
-        width={720}
-      >
-        {detect.isFetching ? <Text type="secondary">{t('checking_data')}</Text> : null}
-        {!detect.isFetching && detected.length === 0 ? <Text type="secondary">{t('detect_nothing')}</Text> : null}
-        {detected.length ? (
-          <>
-            <Table
-              size="small"
-              pagination={false}
-              rowKey={(r) => r[0]}
-              dataSource={detected}
-              rowSelection={{ selectedRowKeys: picked, onChange: (keys) => pick(keys as string[]) }}
-              columns={[
-                { title: t('field_column'), render: (_, r) => r[0] },
-                {
-                  title: t('detected_as'),
-                  render: (_, r) => (
-                    <Space direction="vertical" size={0}>
-                      <Text>{t(`type_${r[1].type}`)}</Text>
-                      {r[1].formats?.length ? (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {r[1].formats.join(' · ')}
-                        </Text>
-                      ) : null}
-                      {r[1].ambiguous ? <Tag color="gold">{t('date_ambiguous_short')}</Tag> : null}
-                    </Space>
-                  ),
-                },
-                { title: t('readable'), render: (_, r) => `${Math.round((r[1].coverage ?? 1) * 100)}%` },
-                {
-                  title: t('not_readable'),
-                  render: (_, r) => (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {(r[1].failing ?? []).join(' · ') || '—'}
-                    </Text>
-                  ),
-                },
-              ]}
-            />
-            <Checkbox
-              style={{ marginTop: 8 }}
-              checked={picked.length === detected.length}
-              onChange={(e) => pick(e.target.checked ? detected.map(([c]) => c) : [])}
+      <Dialog open={detectOpen} onOpenChange={setDetectOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t('detect_types')}</DialogTitle>
+            <DialogDescription>
+              {detect.isFetching ? t('checking_data') : detected.length === 0 ? t('detect_nothing') : t('detected_as')}
+            </DialogDescription>
+          </DialogHeader>
+          {detected.length > 0 && (
+            <div className="max-h-[50vh] overflow-y-auto rounded-lg border">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-muted text-left">
+                  <tr>
+                    <th className="w-8 px-2 py-1">
+                      <Checkbox
+                        aria-label={t('select_all')}
+                        checked={picked.length === detected.length}
+                        onCheckedChange={(c) => pick(c === true ? detected.map(([col]) => col) : [])}
+                      />
+                    </th>
+                    <th className="px-2 py-1 font-medium">{t('field_column')}</th>
+                    <th className="px-2 py-1 font-medium">{t('detected_as')}</th>
+                    <th className="px-2 py-1 font-medium">{t('readable')}</th>
+                    <th className="px-2 py-1 font-medium">{t('not_readable')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detected.map(([col, spec]) => (
+                    <tr key={col} className="border-t align-top">
+                      <td className="px-2 py-1">
+                        <Checkbox
+                          aria-label={col}
+                          checked={picked.includes(col)}
+                          onCheckedChange={(c) => pick(c === true ? [...picked, col] : picked.filter((x) => x !== col))}
+                        />
+                      </td>
+                      <td className="px-2 py-1">{col}</td>
+                      <td className="px-2 py-1">
+                        <p>{t(`type_${spec.type}`)}</p>
+                        {spec.formats?.length ? (
+                          <p className="text-xs text-muted-foreground">{spec.formats.join(' · ')}</p>
+                        ) : null}
+                        {spec.ambiguous && <Tag tone="warn">{t('date_ambiguous_short')}</Tag>}
+                      </td>
+                      <td className="px-2 py-1">{Math.round((spec.coverage ?? 1) * 100)}%</td>
+                      <td className="px-2 py-1 text-xs text-muted-foreground">
+                        {(spec.failing ?? []).join(' · ') || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetectOpen(false)}>
+              {t('cancel')}
+            </Button>
+            <Button
+              disabled={picked.length === 0}
+              onClick={() => {
+                const columns = Object.fromEntries(
+                  detected
+                    .filter(([c]) => picked.includes(c))
+                    .map(([c, spec]) => [
+                      c,
+                      Object.fromEntries(
+                        Object.entries(spec).filter(
+                          ([k, val]) => !['coverage', 'ambiguous', 'failing'].includes(k) && val != null
+                        )
+                      ),
+                    ])
+                );
+                add({ set_types: { columns } });
+                setDetectOpen(false);
+              }}
             >
-              {t('select_all')}
-            </Checkbox>
-          </>
-        ) : null}
-      </Modal>
+              {t('apply_types', { count: picked.length })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Drawer
-        open={Boolean(failures)}
-        onClose={() => setFailures(null)}
-        title={failures ? t('failures_title', { column: failures.column }) : ''}
-        width={420}
-      >
-        {failures && steps[failures.step] ? (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Text type="secondary">{t('failures_hint', { step: stepSentence(steps[failures.step], tt) })}</Text>
-            <List
-              loading={failureList.isLoading}
-              dataSource={failureList.data?.values ?? []}
-              renderItem={(v) => (
-                <List.Item extra={<Tag>{v.count}</Tag>}>
-                  <Text code>{v.value}</Text>
-                </List.Item>
-              )}
-            />
-            {!readOnly && formForStep(steps[failures.step]) ? (
+      <Sheet open={Boolean(failures)} onOpenChange={(o) => !o && setFailures(null)}>
+        <SheetContent className="w-[420px] sm:max-w-[420px]">
+          <SheetHeader>
+            <SheetTitle>{failures ? t('failures_title', { column: failures.column }) : ''}</SheetTitle>
+            <SheetDescription>
+              {failureStep ? t('failures_hint', { step: stepSentence(failureStep, t) }) : ''}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="flex flex-col gap-3 overflow-y-auto px-4">
+            {failureList.isLoading && <Loader2 className="size-4 animate-spin" aria-label={t('loading_preview')} />}
+            <ul className="flex flex-col divide-y">
+              {(failureList.data?.values ?? []).map((v) => (
+                <li key={v.value} className="flex items-center justify-between gap-2 py-1.5">
+                  <code className="rounded bg-muted px-1 text-xs">{v.value}</code>
+                  <Tag>{v.count}</Tag>
+                </li>
+              ))}
+            </ul>
+            {!readOnly && failures && failureStep && formForStep(failureStep) && (
               <Button
-                type="primary"
+                className="self-start"
                 onClick={() => {
                   const i = failures.step;
                   setFailures(null);
@@ -839,26 +966,21 @@ export function RecipeEditor({
               >
                 {t('edit_step')}
               </Button>
-            ) : null}
-          </Space>
-        ) : null}
-      </Drawer>
-      {onColumnMetaChange && meaningFor ? (
-        <ColumnMeaningModal
-          open
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {onColumnMetaChange && meaningFor && (
+        <ColumnMeaningDialog
+          key={meaningFor.column}
           column={meaningFor.column}
           kind={meaningFor.kind}
           value={columnMeta?.[meaningFor.column]}
-          outputDataSourceId={outputDataSourceId}
           onClose={() => setMeaningFor(null)}
           onSave={(meaning) => onColumnMetaChange({ ...(columnMeta ?? {}), [meaningFor.column]: meaning })}
         />
-      ) : null}
+      )}
     </div>
   );
 }
-
-export default RecipeEditor;
-
-/** Kind of a step, for callers that store recipes elsewhere (pipelines). */
-export const kindOf = (step: PrepStep) => stepParts(step)[0];

@@ -33,7 +33,7 @@ import {
   Underline as UnderlineIcon,
   Undo2,
 } from 'lucide-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { toast } from 'sonner';
 import { EditorHeader } from '@/components/office/EditorHeader';
 import { FontPicker, FontSizePicker } from '@/components/office/FontPicker';
@@ -53,6 +53,8 @@ import {
 import { Input } from '@/components/aicser-ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/aicser-ui/native-select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/aicser-ui/popover';
+import { PageElementsDialog, type PageElementField } from '@/components/docs/PageElementsDialog';
+import { PageSheets } from '@/components/docs/PageSheets';
 import { useOfficeFile, type OfficeSaveState } from '@/hooks/useOfficeFile';
 import { downloadFile, pickImages } from '@/lib/office/files';
 import { documentExtensions, isSafeLink } from '@/lib/docs/extensions';
@@ -159,6 +161,10 @@ function LoadedEditor({
   const [zoom, setZoom] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [pages, setPages] = useState(1);
+  const [elements, setElements] = useState<{ open: boolean; focus: PageElementField }>({
+    open: false,
+    focus: 'header',
+  });
   // The editor's onUpdate is created once: it reads the latest page setup and callback through refs.
   const pageRef = useRef(page);
   const onChangeRef = useRef(onChange);
@@ -258,6 +264,11 @@ function LoadedEditor({
         onCopy={() => void copy()}
         onDelete={() => void remove()}
       >
+        {!readOnly && (
+          <Button size="sm" variant="outline" onClick={() => setElements({ open: true, focus: 'header' })}>
+            Page elements
+          </Button>
+        )}
         {!readOnly && <PageSetupMenu page={page} onChange={changePage} />}
         <Button size="sm" onClick={() => void exportDocx()} disabled={exporting}>
           {exporting ? <Loader2 className="animate-spin" /> : <Download />} Export .docx
@@ -270,21 +281,30 @@ function LoadedEditor({
         <div style={{ zoom }} className="mx-auto w-fit">
           {/* Separate sheets of paper behind one editor; Pagination keeps each block on one sheet. */}
           <div className="relative" style={{ width: `${widthMm}mm`, height: pages * stride - PAGE_GAP }}>
-            {Array.from({ length: pages }, (_, i) => (
-              <div
-                key={i}
-                aria-hidden="true"
-                data-testid="doc-sheet"
-                className="absolute inset-x-0 bg-white shadow-md"
-                style={{ top: i * stride, height: pageHeight }}
-              />
-            ))}
-            <div className="doc-page relative h-full text-black" style={{ padding: margin }}>
+            <PageSheets page={page} pages={pages} stride={stride} pageHeight={pageHeight} margin={margin} />
+            <div
+              className="doc-page relative h-full text-black"
+              style={{ padding: margin }}
+              // As in Word and Google Docs: double-click a page's top or bottom margin to edit its header or footer.
+              onDoubleClick={(e) => {
+                if (readOnly) return;
+                const band = marginBandAt(e, { stride, pageHeight, margin });
+                if (band) setElements({ open: true, focus: band });
+              }}
+            >
               <EditorContent editor={editor} className="h-full" />
             </div>
           </div>
         </div>
       </div>
+
+      <PageElementsDialog
+        open={elements.open}
+        focus={elements.focus}
+        page={page}
+        onOpenChange={(open) => setElements((current) => ({ ...current, open }))}
+        onChange={changePage}
+      />
 
       <footer className="flex items-center gap-4 border-t bg-background px-4 py-1 text-xs text-muted-foreground">
         {editor && <Counts editor={editor} />}
@@ -293,6 +313,26 @@ function LoadedEditor({
       </footer>
     </div>
   );
+}
+
+/**
+ * The header or footer margin under a double-click, if any. Only the page's own margins count (not the text or the
+ * grey space between pages). The page is zoomed with CSS `zoom`: compare the box's drawn and layout heights.
+ */
+function marginBandAt(
+  e: ReactMouseEvent<HTMLElement>,
+  g: { stride: number; pageHeight: number; margin: number }
+): PageElementField | null {
+  const target = e.target as HTMLElement;
+  // Clicks in the text are the editor's (select a word); margins are the page box itself or a page gap.
+  if (target !== e.currentTarget && !target.closest('.doc-page-gap')) return null;
+  const box = e.currentTarget.getBoundingClientRect();
+  const scale = e.currentTarget.offsetHeight ? box.height / e.currentTarget.offsetHeight : 1;
+  const y = (e.clientY - box.top) / (scale || 1);
+  const inPage = y - Math.floor(y / g.stride) * g.stride;
+  if (inPage < g.margin) return 'header';
+  if (inPage > g.pageHeight - g.margin && inPage <= g.pageHeight) return 'footer';
+  return null;
 }
 
 function Counts({ editor }: Readonly<{ editor: Editor }>) {
@@ -623,10 +663,19 @@ function focusedChain(editor: Editor) {
   return editor.chain().focus();
 }
 
+/** The table size grid's columns and rows (Google Docs offers up to 20 × 20; more rows can be added later). */
+const GRID_COLS = 10;
+const GRID_ROWS = 8;
+
 function TableMenu({ editor, inTable }: Readonly<{ editor: Editor; inTable: boolean }>) {
+  const [open, setOpen] = useState(false);
   const chain = () => focusedChain(editor);
+  const insert = (rows: number, cols: number) => {
+    setOpen(false);
+    chain().insertTable({ rows, cols, withHeaderRow: true }).run();
+  };
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant={inTable ? 'secondary' : 'ghost'}
@@ -638,9 +687,8 @@ function TableMenu({ editor, inTable }: Readonly<{ editor: Editor; inTable: bool
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" onCloseAutoFocus={(e) => e.preventDefault()}>
-        <DropdownMenuItem onSelect={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
-          Insert table (3 × 3)
-        </DropdownMenuItem>
+        <DropdownMenuLabel>Insert table</DropdownMenuLabel>
+        <TableSizeGrid onPick={insert} />
         {inTable && (
           <>
             <DropdownMenuSeparator />
@@ -666,5 +714,65 @@ function TableMenu({ editor, inTable }: Readonly<{ editor: Editor; inTable: bool
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Pick a table's size by pointing at a grid (as in Google Docs and Word): the cells up to the pointer light up and
+ * the label reads "columns × rows" (as in Word). Arrow keys move the size, Enter inserts.
+ */
+function TableSizeGrid({ onPick }: Readonly<{ onPick: (rows: number, cols: number) => void }>) {
+  const [size, setSize] = useState({ rows: 1, cols: 1 });
+  const clamp = (n: number, max: number) => Math.min(max, Math.max(1, n));
+  return (
+    <div className="px-2 pb-2">
+      <div
+        role="group"
+        aria-label="Table size"
+        tabIndex={0}
+        className="grid w-fit gap-0.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        style={{ gridTemplateColumns: `repeat(${GRID_COLS}, 1rem)` }}
+        onKeyDown={(e) => {
+          const step: Record<string, [number, number]> = {
+            ArrowRight: [0, 1],
+            ArrowLeft: [0, -1],
+            ArrowDown: [1, 0],
+            ArrowUp: [-1, 0],
+          };
+          const move = step[e.key];
+          if (move) {
+            e.preventDefault();
+            e.stopPropagation();
+            setSize((s) => ({ rows: clamp(s.rows + move[0], GRID_ROWS), cols: clamp(s.cols + move[1], GRID_COLS) }));
+          } else if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onPick(size.rows, size.cols);
+          }
+        }}
+      >
+        {Array.from({ length: GRID_ROWS }, (_, r) =>
+          Array.from({ length: GRID_COLS }, (_, c) => {
+            const lit = r < size.rows && c < size.cols;
+            return (
+              <button
+                key={`${r}-${c}`}
+                type="button"
+                tabIndex={-1}
+                aria-label={`Insert table, ${c + 1} columns by ${r + 1} rows`}
+                className={`size-4 rounded-[3px] border transition-colors ${
+                  lit ? 'border-primary bg-primary/25' : 'border-border bg-background'
+                }`}
+                onMouseEnter={() => setSize({ rows: r + 1, cols: c + 1 })}
+                onFocus={() => setSize({ rows: r + 1, cols: c + 1 })}
+                onClick={() => onPick(r + 1, c + 1)}
+              />
+            );
+          })
+        )}
+      </div>
+      <p className="mt-1.5 text-center text-xs text-muted-foreground" aria-live="polite">
+        {size.cols} × {size.rows}
+      </p>
+    </div>
   );
 }

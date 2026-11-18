@@ -9,6 +9,7 @@ import {
   type EdgeProps,
   Position,
 } from '@xyflow/react';
+import { cn } from '@/lib/ui/utils';
 
 export type RelationshipEdgeData = {
   cardinality: string;
@@ -43,21 +44,14 @@ export function RelationshipEdge({
   });
 
   const label = CARDINALITY_LABEL[data?.cardinality ?? 'one_to_many'] ?? '1:N';
-  const color = selected ? 'var(--ant-color-primary)' : '#6b7280';
 
+  // Same line and label as the semantic model diagram; the line's colour comes from the flow theme (styles/flow.css).
   return (
     <>
-      {/* Visible line */}
       <BaseEdge
         id={id}
         path={edgePath}
-        style={{
-          stroke: color,
-          strokeWidth: selected ? 2.5 : 1.5,
-          strokeDasharray: data?.cardinality === 'many_to_many' ? '6 3' : undefined,
-          transition: 'stroke 160ms, stroke-width 160ms',
-        }}
-        markerEnd={`url(#rel-arrow-${selected ? 'selected' : 'default'})`}
+        style={data?.cardinality === 'many_to_many' ? { strokeDasharray: '6 3' } : undefined}
       />
       {/* Wide transparent hit area for easy clicking */}
       <path
@@ -68,56 +62,26 @@ export function RelationshipEdge({
         style={{ cursor: 'pointer' }}
         onClick={() => data?.onSelect?.(data.relationshipId)}
       />
-      {/* Cardinality label */}
       <EdgeLabelRenderer>
+        {/* Positioned box first: the scope element is display:contents and can't carry the position. */}
         <div
-          style={{
-            position: 'absolute',
-            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-            background: selected ? 'var(--ant-color-primary-bg)' : 'var(--ant-color-bg-container)',
-            border: `1px solid ${selected ? 'var(--ant-color-primary-border)' : 'var(--ant-color-border)'}`,
-            borderRadius: 4,
-            padding: '1px 6px',
-            fontSize: 10,
-            fontWeight: 700,
-            fontFamily: 'ui-monospace, monospace',
-            color,
-            pointerEvents: 'none',
-            letterSpacing: '0.04em',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-          }}
           className="nodrag nopan"
+          style={{ position: 'absolute', transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`, pointerEvents: 'all' }}
         >
-          {label}
+          <div className="aicser-ui">
+            <button
+              type="button"
+              onClick={() => data?.onSelect?.(data.relationshipId)}
+              className={cn(
+                'rounded border bg-card px-1.5 py-0.5 font-mono text-[10px] text-card-foreground shadow-sm hover:border-primary',
+                selected && 'border-primary text-primary-hover dark:text-primary'
+              )}
+            >
+              {label}
+            </button>
+          </div>
         </div>
       </EdgeLabelRenderer>
-      {/* SVG arrow marker defs — injected once, reused by all edges */}
-      <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-        <defs>
-          <marker
-            id="rel-arrow-default"
-            markerWidth="8"
-            markerHeight="8"
-            refX="7"
-            refY="3"
-            orient="auto"
-            markerUnits="strokeWidth"
-          >
-            <path d="M0,0 L0,6 L8,3 z" fill="#6b7280" />
-          </marker>
-          <marker
-            id="rel-arrow-selected"
-            markerWidth="8"
-            markerHeight="8"
-            refX="7"
-            refY="3"
-            orient="auto"
-            markerUnits="strokeWidth"
-          >
-            <path d="M0,0 L0,6 L8,3 z" fill="var(--ant-color-primary)" />
-          </marker>
-        </defs>
-      </svg>
     </>
   );
 }

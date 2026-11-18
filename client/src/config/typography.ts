@@ -1,10 +1,12 @@
 /**
- * Multilingual typography — Noto Sans family with script-specific variants.
+ * Multilingual typography — Geist (the desktop app's face) for Latin text, then the Noto Sans family with
+ * script-specific variants: Khmer, Thai, Chinese and Japanese characters fall through to their own fonts.
  * Used by layout, LocaleProvider, ThemeProvider, and BrandThemeProvider defaults.
  */
 
 export const GOOGLE_FONTS_HREF =
   'https://fonts.googleapis.com/css2?' +
+  'family=Geist:wght@400;500;600;700&' +
   'family=Noto+Sans:wght@400;500;600;700&' +
   'family=Noto+Sans+SC:wght@400;500;600;700&' +
   'family=Noto+Sans+JP:wght@400;500;600;700&' +
@@ -23,6 +25,7 @@ const SYSTEM_FALLBACK =
 
 /** Full stack when locale is unknown — covers all supported scripts. */
 export const MULTILINGUAL_FONT_STACK = [
+  '"Geist"',
   '"Noto Sans"',
   '"Noto Sans SC"',
   '"Noto Sans JP"',
@@ -34,19 +37,20 @@ export const MULTILINGUAL_FONT_STACK = [
 
 /** Locale-optimized stacks — primary script family first for better shaping. */
 export const LOCALE_FONT_STACK: Record<string, string> = {
-  en: `"Noto Sans", ${SYSTEM_FALLBACK}`,
-  id: `"Noto Sans", ${SYSTEM_FALLBACK}`,
-  de: `"Noto Sans", ${SYSTEM_FALLBACK}`,
-  es: `"Noto Sans", ${SYSTEM_FALLBACK}`,
-  fr: `"Noto Sans", ${SYSTEM_FALLBACK}`,
+  en: `"Geist", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  id: `"Geist", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  de: `"Geist", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  es: `"Geist", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  fr: `"Geist", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  // Geist has no Vietnamese subset: mixing faces per letter looks broken, so Vietnamese keeps Noto Sans.
   vi: `"Noto Sans", ${SYSTEM_FALLBACK}`,
-  zh: `"Noto Sans SC", "Noto Sans", ${SYSTEM_FALLBACK}`,
-  ja: `"Noto Sans JP", "Noto Sans", ${SYSTEM_FALLBACK}`,
-  th: `"Noto Sans Thai", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  zh: `"Geist", "Noto Sans SC", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  ja: `"Geist", "Noto Sans JP", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  th: `"Geist", "Noto Sans Thai", "Noto Sans", ${SYSTEM_FALLBACK}`,
   // Kantumruy Pro first (built for UI text), Noto Sans Khmer as the
   // broader-coverage fallback — same "script-specific face, then Noto,
   // then system" pattern as zh/ja/th above.
-  km: `"Kantumruy Pro", "Noto Sans Khmer", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  km: `"Geist", "Kantumruy Pro", "Noto Sans Khmer", "Noto Sans", ${SYSTEM_FALLBACK}`,
 };
 
 export function getFontStackForLocale(locale: string): string {

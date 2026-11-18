@@ -5961,7 +5961,9 @@
     "edit_post": "Edit post",
     "edited_label": "(edited)",
     "edited_label_short": "Edited",
-    "more_options": "More options"
+    "more_options": "More options",
+    "author_badge": "Autor",
+    "more_actions": "Más acciones"
   },
   "feed_card_actions": {
     "like": "Me gusta",

@@ -19,7 +19,6 @@ function DocsList() {
       store={documentStore}
       noun="document"
       title="Docs"
-      description="Write documents like in Word: headings, fonts (English and Khmer), lists, tables and images. Open and save .docx files."
       fileType="doc"
       blank={blankDocument}
       importFile={{ label: 'Open .docx', extension: 'docx', run: importDocx }}

@@ -1,0 +1,20 @@
+# `railway up` from client/ uploads this folder: keep it to the source the Dockerfile needs
+.git
+**/.git
+node_modules
+**/node_modules
+.next
+.next-dev
+out
+build
+coverage
+test-results
+playwright-report
+e2e/.auth
+.vitest
+tsconfig.tsbuildinfo
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example

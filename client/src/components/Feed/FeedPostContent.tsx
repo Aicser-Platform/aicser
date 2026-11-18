@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { Typography } from 'antd';
+import { AicserUi } from '@/components/aicser-ui/scope';
+import { cn } from '@/lib/ui/utils';
 import type { FeedItem } from '@/services/socialFeedService';
 import { FeedExpandableText } from '@/components/Feed/FeedExpandableText';
 import { renderTextWithMentions } from '@/components/Feed/MentionText';
@@ -12,8 +13,6 @@ import {
   visibleFeedTags,
 } from '@/components/Feed/feedPostDisplay';
 import { feedItemDisplayDescription } from '@/utils/sanitizeDisplayTitle';
-
-const { Paragraph, Text } = Typography;
 
 export interface FeedPostContentProps {
   item: FeedItem;
@@ -32,6 +31,7 @@ export interface FeedPostContentProps {
   showTitle?: boolean;
 }
 
+/** A post's title, question, summary and tags (Aicser UI; scoped itself: it also renders in the share dialog). */
 export function FeedPostContent({
   item,
   titleOverride,
@@ -44,54 +44,56 @@ export function FeedPostContent({
 }: FeedPostContentProps) {
   const isDetail = variant === 'detail';
   const title = (
-    titleOverride
-      ? resolveFeedCardHeading({ ...item, title: titleOverride })
-      : resolveFeedCardHeading(item)
+    titleOverride ? resolveFeedCardHeading({ ...item, title: titleOverride }) : resolveFeedCardHeading(item)
   ).trim();
   const question = resolveFeedPostQuestion(item, title || item.title);
   const summary = feedItemDisplayDescription(resolveFeedPostSummary(item, descriptionOverride));
   const tags = visibleFeedTags(item.tags, item.assetType);
 
   return (
-    <div className={`feed-post-content flex flex-col ${isDetail ? 'gap-2' : ''} ${className}`.trim()}>
-      {showTitle && title ? (
-        <Paragraph
-          className={`leading-snug text-[var(--ant-color-text)] ${compactTitle ? 'text-sm font-semibold' : 'text-base font-semibold'}`}
-          ellipsis={compactTitle && !isDetail ? { rows: 2 } : false}
-        >
-          {title}
-        </Paragraph>
-      ) : null}
-      {question ? (
-        <Text
-          type="secondary"
-          className={`text-sm leading-relaxed ${isDetail ? 'whitespace-pre-line' : 'line-clamp-2'}`}
-        >
-          {question}
-        </Text>
-      ) : null}
-      {summary ? (
-        isDetail ? (
-          <Paragraph
-            type="secondary"
-            className="!mb-0 !mt-0 max-w-3xl !text-sm !leading-6 whitespace-pre-line"
+    <AicserUi>
+      <div className={cn('feed-post-content flex flex-col gap-1.5', className)}>
+        {showTitle && title ? (
+          <p
+            className={cn(
+              'm-0 font-semibold leading-snug text-foreground',
+              compactTitle ? 'text-sm' : 'text-base',
+              compactTitle && !isDetail && 'line-clamp-2'
+            )}
           >
-            {renderTextWithMentions(summary)}
-          </Paragraph>
-        ) : (
-          <FeedExpandableText text={summary} maxRows={descriptionMaxRows} />
-        )
-      ) : null}
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-x-2">
-          {tags.map((tag) => (
-            <span key={tag} className="text-[13px] font-medium text-[var(--ant-color-primary)]">
-              #{tag}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+            {title}
+          </p>
+        ) : null}
+        {question ? (
+          <p
+            className={cn(
+              'm-0 text-sm leading-relaxed text-muted-foreground',
+              isDetail ? 'whitespace-pre-line' : 'line-clamp-2'
+            )}
+          >
+            {question}
+          </p>
+        ) : null}
+        {summary ? (
+          isDetail ? (
+            <p className="m-0 max-w-3xl whitespace-pre-line text-sm leading-6 text-muted-foreground">
+              {renderTextWithMentions(summary)}
+            </p>
+          ) : (
+            <FeedExpandableText text={summary} maxRows={descriptionMaxRows} />
+          )
+        ) : null}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-x-2">
+            {tags.map((tag) => (
+              <span key={tag} className="text-[13px] font-medium text-primary-hover dark:text-primary">
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </AicserUi>
   );
 }
 

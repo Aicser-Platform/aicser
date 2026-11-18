@@ -9,8 +9,8 @@ import {
   renameAllMapping,
   stepColumns,
   steps,
-} from '../recipeSteps';
-import { isDisabled, stepSentence, toggleDisabled } from '../stepText';
+} from '@/lib/prep/recipeSteps';
+import { isDisabled, stepSentence, toggleDisabled } from '@/lib/prep/stepText';
 
 describe('recipe step helpers', () => {
   it('folds consecutive renames and type changes into one step', () => {

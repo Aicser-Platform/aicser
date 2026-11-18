@@ -447,6 +447,54 @@ def _normalize_duckdb_table_ref(ref: str) -> str:
     return ".".join(parts).lower()
 
 
+def file_table_aliases(data_source: Dict[str, Any]) -> Dict[str, str]:
+    """Physical DuckDB table -> the table name policies are written against, for uploads.
+
+    A multi-sheet upload runs as ``sheet_0_customers`` while row and column
+    policies name ``customers``; the AI is shown the physical names, so SQL can
+    use either. Without this map a policy keyed on one never sees the other.
+    """
+    if str(data_source.get("type") or "").lower() != "file":
+        return {}
+    mapping = (data_source.get("schema") or {}).get("duckdb_tables") or {}
+    if not isinstance(mapping, dict):
+        return {}
+    return {
+        str(physical).strip(): str(logical).strip()
+        for logical, physical in mapping.items()
+        if logical and physical and str(logical).strip().lower() != str(physical).strip().lower()
+    }
+
+
+_SQL_ALIAS_RE = re.compile(
+    r'(?:\bAS\s+|\)\s*(?:AS\s+)?|\b(?:FROM|JOIN)\s+(?:"[^"]+"|`[^`]+`|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[A-Za-z_][\w$-]*))?\s+(?:AS\s+)?)'
+    r'("[^"]+"|`[^`]+`|[A-Za-z_]\w*)',
+    re.IGNORECASE,
+)
+# Words that can follow a table ref or a closing paren without being an alias.
+_NOT_ALIAS = {
+    "where", "join", "inner", "left", "right", "full", "outer", "cross", "natural", "on",
+    "using", "group", "order", "having", "limit", "offset", "union", "intersect", "except",
+    "window", "qualify", "as", "and", "or", "not", "is", "in", "between", "like", "then",
+    "when", "else", "end", "over", "filter", "within", "asc", "desc", "nulls", "fetch",
+    "sample", "tablesample", "pivot", "unpivot", "lateral", "positional", "asof", "anti",
+    "semi", "select", "from", "returning", "for", "values", "with",
+}
+
+
+def _sql_aliases(query: str) -> set:
+    """Lower-cased table/subquery aliases declared in ``query`` (string literals ignored)."""
+    aliases = set()
+    for i, part in enumerate(re.split(r"('(?:[^']|'')*')", query or "")):
+        if i % 2:
+            continue
+        for match in _SQL_ALIAS_RE.finditer(part):
+            name = match.group(1).strip('"`').lower()
+            if name and name not in _NOT_ALIAS:
+                aliases.add(name)
+    return aliases
+
+
 def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> Tuple[str, Optional[str], List[str]]:
     """Normalize file-upload SQL table refs to the DuckDB execution surface.
 
@@ -559,6 +607,11 @@ def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> T
 
     # Columns qualified by the name as written follow the table: SELECT SUM(loans.amount)
     # FROM loans (how semantic metrics and people write it) runs as "data".amount FROM "data".
+    # Not when that name is also an alias in the query: CLS writes FROM "customers" AS
+    # "customers" and RLS writes FROM (SELECT ...) AS customers, and there the qualifier
+    # names the alias, which still exists after the table behind it is renamed.
+    for alias in _sql_aliases(rewritten):
+        redirected.pop(alias, None)
     if redirected:
         parts = re.split(r"('(?:[^']|'')*')", rewritten)  # odd parts are string literals: left as typed
         for i in range(0, len(parts), 2):
@@ -948,6 +1001,7 @@ class MultiEngineQueryService:
                 organization_id=access.organization_id,
                 project_id=access.project_id,
                 dialect=resolved,
+                table_name_aliases=file_table_aliases(data_source) or None,
             )
         except RowSecurityIdentityRequired:
             raise
@@ -1016,7 +1070,7 @@ class MultiEngineQueryService:
         # against the source's real table name. Both names identify the same
         # rows (the loader registers a view under the real name), so the
         # predicate is registered under both rather than silently missing.
-        table_name_aliases: Dict[str, str] = {}
+        table_name_aliases: Dict[str, str] = file_table_aliases(data_source)
         if (data_source.get("type") or "").lower() == "lakehouse_iceberg":
             real_table = (data_source.get("source_table") or "").strip()
             if real_table and real_table.lower() != "data":
@@ -2188,7 +2242,9 @@ class DuckDBEngine(BaseQueryEngine):
                 except Exception:
                     pass
         await self._load_file_data(conn, data_source)
-        if path:
+        # A sample loaded because storage was unreachable is not this upload: cached, it
+        # would keep serving 64 rows and no sheet tables after storage comes back.
+        if path and not data_source.get("analysis_based_on_sample_only"):
             try:
                 file_extracts.write(conn, path)
             except Exception as exc:
@@ -2241,6 +2297,10 @@ class DuckDBEngine(BaseQueryEngine):
                     conn.execute(f"CREATE TABLE data AS SELECT * FROM read_json_auto('{safe_path}')")
                 elif file_format in ("xlsx", "xls"):
                     await self._load_excel_all_sheets_into_duckdb(conn, file_path, schema)
+                elif file_format == "duckdb":
+                    from src.modules.prep.clean_copy import load_into
+
+                    load_into(conn, file_path)
                 else:
                     conn.execute(f"CREATE TABLE data AS SELECT * FROM read_csv_auto('{safe_path}')")
                 logger.info(f"✅ Loaded local file into DuckDB: {file_path[:80]}...")
@@ -2276,6 +2336,11 @@ class DuckDBEngine(BaseQueryEngine):
                     conn.execute(f"CREATE TABLE data AS SELECT * FROM read_json_auto('{safe_path}')")
                 elif blob_file_format in ("xlsx", "xls"):
                     await self._load_excel_all_sheets_into_duckdb(conn, tmp_path, schema)
+                elif blob_file_format == "duckdb":
+                    # A Prepare clean copy: several typed tables in one DuckDB file
+                    from src.modules.prep.clean_copy import load_into
+
+                    load_into(conn, tmp_path)
                 logger.info("✅ Loaded full file from datasource storage into DuckDB")
                 data_source["analysis_based_on_sample_only"] = False
                 return
@@ -3378,6 +3443,17 @@ class PandasEngine(BaseQueryEngine):
                         return (pd.read_json(tmp_path), None)
                     elif blob_file_format in ("xlsx", "xls"):
                         return (pd.read_excel(tmp_path), None)
+                    elif blob_file_format == "duckdb":
+                        import duckdb as _duckdb
+
+                        from src.modules.prep.clean_copy import load_into
+
+                        _conn = _duckdb.connect()
+                        try:
+                            load_into(_conn, tmp_path)
+                            return (_conn.execute("SELECT * FROM data").df(), None)
+                        finally:
+                            _conn.close()
                     elif blob_file_format == "txt":
                         return (pd.read_csv(tmp_path, names=["text"]), None)
                 except Exception as e:

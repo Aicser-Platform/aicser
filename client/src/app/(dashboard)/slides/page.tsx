@@ -19,7 +19,6 @@ function SlidesList() {
       store={presentationStore}
       noun="presentation"
       title="Slides"
-      description="Make presentations like in PowerPoint: layouts, themes, text, shapes and pictures, then present full screen. Open and save .pptx files."
       fileType="slides"
       blank={blankPresentation}
       importFile={{ label: 'Open .pptx', extension: 'pptx', run: importPptx }}

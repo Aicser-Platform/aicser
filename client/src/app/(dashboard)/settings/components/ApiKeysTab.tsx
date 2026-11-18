@@ -85,13 +85,13 @@ const PROVIDER_MODEL_DEFS: Record<string, ProviderModelDef[]> = {
   // gemini-2.0-flash was shut down 2026-06-01 and gemini-1.5-* is fully retired —
   // dropped rather than kept as broken presets. The 2.5 family is nominally alive
   // until Oct 2026 but has been intermittently 404ing since Jul 2026, so 3.x is
-  // the default now.
+  // the default now. gemini-2.5-pro returns 404 "no longer available to new users"
+  // (checked 2026-11-15), so it is no longer offered; use 3.1 Pro instead.
   google: [
     { value: 'gemini-3.6-flash', labelKey: 'ai_model_gemini_3_6_flash', suffix: 'default' },
     { value: 'gemini-3.5-flash-lite', labelKey: 'ai_model_gemini_3_5_flash_lite' },
     { value: 'gemini-3.1-pro-preview', labelKey: 'ai_model_gemini_3_1_pro_preview' },
     { value: 'gemini-3-flash-preview', labelKey: 'ai_model_gemini_3_flash_preview' },
-    { value: 'gemini-2.5-pro', labelKey: 'ai_model_gemini_2_5_pro' },
     { value: 'gemini-2.5-flash', labelKey: 'ai_model_gemini_2_5_flash' },
   ],
   // DeepSeek retired the "deepseek-chat"/"deepseek-reasoner" aliases on 2026-07-24

@@ -1,0 +1,11 @@
+/* App shell (components/app-shell): only what Tailwind classes can't say. Pages that size themselves against the
+   phone tab bar read --mobile-bottom-nav-height (it sits under the page, below 992px). */
+:root {
+  --mobile-bottom-nav-height: 0px;
+}
+
+@media (max-width: 991.98px) {
+  :root {
+    --mobile-bottom-nav-height: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+}

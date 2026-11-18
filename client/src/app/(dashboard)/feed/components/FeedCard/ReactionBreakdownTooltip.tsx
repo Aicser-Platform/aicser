@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tooltip } from 'antd';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/aicser-ui/tooltip';
 import type { ReactionType } from '@/services/socialFeedService';
 import { reactionOptions } from './constants';
 
@@ -8,9 +8,8 @@ interface ReactionBreakdownTooltipProps {
   children: React.ReactElement;
 }
 
-/** Wraps a reaction count with a hover breakdown by type (e.g. "❤️ 2 · 👍 1") -
- * comments already showed this; the post-level reaction button only ever
- * showed a flat total. No tooltip when there's nothing to break down. */
+/** Wraps a reaction count with a hover breakdown by type (e.g. "❤ 2 · 👍 1"). No tooltip when there's nothing
+ * to break down. */
 const ReactionBreakdownTooltip: React.FC<ReactionBreakdownTooltipProps> = ({ breakdown, children }) => {
   const entries = reactionOptions
     .map((option) => ({ option, count: breakdown?.[option.key] ?? 0 }))
@@ -19,19 +18,18 @@ const ReactionBreakdownTooltip: React.FC<ReactionBreakdownTooltipProps> = ({ bre
   if (entries.length === 0) return children;
 
   return (
-    <Tooltip
-      title={
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {entries.map(({ option, count }) => (
-            <span key={option.key} className="flex items-center gap-1 text-xs">
-              <span className="text-sm leading-none">{option.icon}</span>
+            <span key={option.key} className="flex items-center gap-1 text-xs [&_svg]:size-3">
+              {option.icon}
               <span>{count}</span>
             </span>
           ))}
-        </div>
-      }
-    >
-      {children}
+        </span>
+      </TooltipContent>
     </Tooltip>
   );
 };

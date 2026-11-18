@@ -88,3 +88,12 @@ class PublishRequest(BaseModel):
 
 class SaveAsTableRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+
+class SaveAllRequest(BaseModel):
+    # Copy the tables nobody prepared as they are, so the clean copy is the whole source
+    include_unprepared: bool = True
+    # Only these source tables; all when empty
+    tables: Optional[List[str]] = Field(default=None, max_length=500)
+    # The clean copy's name when it is made now
+    name: Optional[str] = Field(default=None, max_length=200)

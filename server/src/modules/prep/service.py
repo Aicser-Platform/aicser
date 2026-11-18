@@ -24,7 +24,7 @@ from src.modules.prep.engine.compiler import compile_steps
 from src.modules.prep.engine import runtime
 from src.modules.prep.engine.executor import as_table, connect, preview_steps
 from src.modules.prep.engine.profiler import profile_object
-from src.modules.prep.engine.scoring import health_score
+from src.modules.prep.engine.scoring import health_with_findings
 from src.modules.prep.engine.steps import STEP_REGISTRY
 
 # Saving a recipe as a table reads at most this many rows.
@@ -240,14 +240,15 @@ async def profile(caller: Caller, req) -> Dict[str, Any]:
         conn.execute(f"CREATE OR REPLACE TEMP VIEW _prepared AS {compiled.sql}")
         prof = profile_object("SELECT * FROM _prepared", connection=conn)
         info = _sample_info(req, sample, table)
+        findings = insights.suggestions(conn, "_prepared") + insights.review_items(conn, "_prepared")
         return {
             "table": table,
             # Whether these stats cover every row or the first N, so the UI can say "in a sample".
             "profile": {**prof.model_dump(), "sampled": info["sampled"]},
             **info,
-            "health": health_score(prof),
+            "health": health_with_findings(prof, findings),
             "distributions": insights.distributions(conn, "_prepared"),
-            "findings": insights.suggestions(conn, "_prepared") + insights.review_items(conn, "_prepared"),
+            "findings": findings,
         }
 
     try:
@@ -333,10 +334,11 @@ async def save_arrow_as_connection(caller: Caller, table: pa.Table, name: str) -
     return upload.get("data_source") or {}
 
 
-async def save_as_table(caller: Caller, recipe, name: str) -> Dict[str, Any]:
-    """Run the recipe over the whole table and store the result as a new connection."""
-    source, _table, rows = await load_sample(caller, recipe.data_source_id, recipe.source_table, MAX_SAVE_ROWS)
-    steps, assets = await _load_assets(caller, source, list(recipe.steps or []), MAX_SAVE_ROWS)
+async def run_full(caller: Caller, data_source_id: str, table: Optional[str],
+                   steps: List[Dict[str, Any]]) -> tuple[Dict[str, Any], str, pa.Table, bool]:
+    """``steps`` over the whole table (up to MAX_SAVE_ROWS rows): (source, table, rows, truncated)."""
+    source, name, rows = await load_sample(caller, data_source_id, table, MAX_SAVE_ROWS)
+    steps, assets = await _load_assets(caller, source, list(steps or []), MAX_SAVE_ROWS)
     try:
         assets = await _with_runtime(caller, steps, rows, assets, source=source)
     except runtime.RuntimeStepError as exc:
@@ -350,15 +352,193 @@ async def save_as_table(caller: Caller, recipe, name: str) -> Dict[str, Any]:
         result = await asyncio.to_thread(run)
     except Exception as exc:  # noqa: BLE001 - the person needs the engine's reason
         raise HTTPException(status_code=400, detail=f"The recipe could not run: {exc}") from exc
+    return source, name, result, rows.num_rows >= MAX_SAVE_ROWS
 
-    data_source = await save_arrow_as_connection(caller, result, name)
+
+async def save_as_table(caller: Caller, recipe, name: Optional[str], db) -> Dict[str, Any]:
+    """Run the recipe over the whole table and put the result in its source's clean copy (one
+    connection per source, made on the first save), replacing that table there."""
+    from src.modules.prep import clean_copy
+
+    source, table, result, truncated = await run_full(caller, recipe.data_source_id, recipe.source_table, recipe.steps)
+    target = clean_copy.table_name_for(source, table)
+    saved = await clean_copy.save(
+        caller, db, source, {target: result},
+        {target: {"recipe_id": str(recipe.id), "recipe_version": recipe.version, "rows": result.num_rows,
+                  "source_table": table, "truncated": truncated}},
+        name=name,
+    )
     return {
-        "data_source_id": data_source.get("id"),
-        "name": data_source.get("name") or name,
+        "data_source_id": saved["id"],
+        "name": saved["name"],
+        "table": target,
         "rows": result.num_rows,
         "columns": result.num_columns,
-        "truncated": rows.num_rows >= MAX_SAVE_ROWS,
+        "truncated": truncated,
+        "tables": len(saved["tables"]),
     }
+
+
+def source_tables(source: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The source's tables as Prepare names them (``schema.table`` outside the default schema),
+    with the row count the connection last reported."""
+    out = []
+    for item in ((source.get("schema") or {}).get("tables") or []):
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        parent = item.get("schema")
+        name = f"{parent}.{item['name']}" if parent and parent not in ("public", "main") else str(item["name"])
+        out.append({"name": name, "rows": item.get("row_count"), "columns": len(item.get("columns") or [])})
+    if not out and (source.get("type") or "").lower() == "file":
+        out.append({"name": FILE_TABLE, "rows": source.get("row_count"), "columns": None})
+    return out
+
+
+def _recipe_table(source: Dict[str, Any], recipe) -> str:
+    """The source table a recipe reads; a file recipe saved as ``data`` reads the first table."""
+    table = recipe.source_table or FILE_TABLE
+    if table == FILE_TABLE and (source.get("type") or "").lower() == "file":
+        tables = source_tables(source)
+        if tables:
+            return tables[0]["name"]
+    return table
+
+
+async def published_steps(db, recipe) -> Optional[List[Dict[str, Any]]]:
+    """The steps of the recipe's latest published version, or None when it was never published."""
+    from sqlalchemy import select
+
+    from src.modules.prep.models import PrepRecipeVersion
+
+    if recipe.status == "published":
+        return list(recipe.steps or [])
+    if not recipe.version:
+        return None
+    latest = (await db.execute(
+        select(PrepRecipeVersion).where(PrepRecipeVersion.recipe_id == recipe.id)
+        .order_by(PrepRecipeVersion.version.desc()).limit(1)
+    )).scalar_one_or_none()
+    return list(latest.steps or []) if latest else None
+
+
+async def _recipes_by_table(db, caller: Caller, source: Dict[str, Any]) -> Dict[str, List[Any]]:
+    """The project's recipes on this source, newest first, grouped by the table they read."""
+    from sqlalchemy import select
+
+    from src.modules.prep.models import PrepRecipe
+
+    query = select(PrepRecipe).where(PrepRecipe.data_source_id == str(source["id"]), PrepRecipe.is_deleted.is_not(True))
+    import uuid
+
+    if caller.project_id:
+        query = query.where(PrepRecipe.project_id == uuid.UUID(str(caller.project_id)))
+    else:
+        query = query.where(PrepRecipe.user_id == uuid.UUID(str(caller.user_id)))
+    grouped: Dict[str, List[Any]] = {}
+    for recipe in (await db.execute(query.order_by(PrepRecipe.updated_at.desc()))).scalars().all():
+        grouped.setdefault(_recipe_table(source, recipe).lower(), []).append(recipe)
+    return grouped
+
+
+def _pick(recipes: List[Any]) -> Optional[Any]:
+    """The recipe that speaks for a table: the newest published one, else the newest."""
+    for recipe in recipes:
+        if recipe.version:
+            return recipe
+    return recipes[0] if recipes else None
+
+
+async def source_overview(caller: Caller, db, data_source_id: str) -> Dict[str, Any]:
+    """Every table of a source with its recipe and what its clean copy holds, so a source with
+    many tables is cleaned from one list."""
+    from src.modules.prep import clean_copy
+
+    source = await load_source_for(caller, data_source_id)
+    grouped = await _recipes_by_table(db, caller, source)
+    copy = await clean_copy.find(db, data_source_id, caller.project_id)
+    linked = (copy or {}).get("tables") or {}
+    tables = []
+    for item in source_tables(source):
+        recipes = grouped.get(item["name"].lower(), [])
+        recipe = _pick(recipes)
+        saved = linked.get(clean_copy.table_name_for(source, item["name"]))
+        tables.append({
+            **item,
+            "clean_name": clean_copy.table_name_for(source, item["name"]),
+            "recipe": None if recipe is None else {
+                "id": str(recipe.id), "name": recipe.name, "status": recipe.status, "version": recipe.version,
+                "steps": len(recipe.steps or []),
+                "updated_at": recipe.updated_at.isoformat() if recipe.updated_at else None,
+            },
+            "other_recipes": max(0, len(recipes) - 1),
+            "saved": saved,
+            # The copy holds an older version than the one now published
+            "outdated": bool(saved and recipe and saved.get("recipe_id") == str(recipe.id)
+                             and (saved.get("recipe_version") or 0) < (recipe.version or 0)),
+        })
+    return {
+        "source": {"id": str(source["id"]), "name": source.get("name"), "type": source.get("type"),
+                   "db_type": source.get("db_type"),
+                   "prepared_from": ((source.get("schema") or {}).get("prepared_from") or {}).get("data_source_id")},
+        "tables": tables,
+        "clean_copy": None if not copy else {"id": copy["id"], "name": copy["name"], "updated_at": copy["updated_at"]},
+    }
+
+
+# A save-all holds at most this many rows in memory before writing them to the clean copy.
+SAVE_ALL_BATCH_ROWS = 2_000_000
+
+
+async def save_all(caller: Caller, db, data_source_id: str, *, include_unprepared: bool,
+                   only: Optional[List[str]] = None, name: Optional[str] = None) -> Dict[str, Any]:
+    """Fill the source's clean copy: each table through its published recipe, and (when asked)
+    the tables without one as they are. A table that fails is reported and the rest carry on."""
+    from src.modules.prep import clean_copy
+
+    source = await load_source_for(caller, data_source_id)
+    grouped = await _recipes_by_table(db, caller, source)
+    wanted = {t.lower() for t in only} if only else None
+    results: List[Dict[str, Any]] = []
+    batch: Dict[str, pa.Table] = {}
+    details: Dict[str, Dict[str, Any]] = {}
+    held = 0
+    copy: Optional[Dict[str, Any]] = None
+
+    async def flush() -> None:
+        nonlocal batch, details, held, copy
+        if batch:
+            copy = await clean_copy.save(caller, db, source, batch, details, name=name)
+        batch, details, held = {}, {}, 0
+
+    for item in source_tables(source):
+        table = item["name"]
+        if wanted is not None and table.lower() not in wanted:
+            continue
+        recipe = _pick(grouped.get(table.lower(), []))
+        steps = await published_steps(db, recipe) if recipe else None
+        if steps is None and not include_unprepared:
+            results.append({"table": table, "status": "skipped",
+                            "reason": "draft" if recipe else "no_recipe"})
+            continue
+        try:
+            _src, read_as, rows, truncated = await run_full(
+                caller, data_source_id, recipe.source_table if (recipe and steps is not None) else table, steps or [])
+        except HTTPException as exc:
+            results.append({"table": table, "status": "error", "message": str(exc.detail)})
+            continue
+        target = clean_copy.table_name_for(source, table)
+        batch[target] = rows
+        details[target] = {"recipe_id": str(recipe.id) if (recipe and steps is not None) else None,
+                           "recipe_version": recipe.version if (recipe and steps is not None) else None,
+                           "rows": rows.num_rows, "source_table": table, "truncated": truncated,
+                           "as_is": steps is None}
+        results.append({"table": table, "status": "cleaned" if steps is not None else "copied",
+                        "rows": rows.num_rows, "truncated": truncated})
+        held += rows.num_rows
+        if held >= SAVE_ALL_BATCH_ROWS:
+            await flush()
+    await flush()
+    return {"clean_copy": None if not copy else {"id": copy["id"], "name": copy["name"]}, "tables": results}
 
 
 async def organization_of(db, project_id: Optional[str], source: Optional[Dict[str, Any]] = None) -> Optional[str]:

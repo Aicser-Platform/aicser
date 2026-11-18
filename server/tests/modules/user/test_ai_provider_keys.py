@@ -31,6 +31,9 @@ class _FakeSettingsRepo:
         self.values[(user_id, key)] = value
         return _SettingEntry(key=key, value=value)
 
+    async def delete_setting(self, user_id: str, key: str):
+        return self.values.pop((user_id, key), None) is not None
+
     async def get_all_settings(self, user_id: str):
         return {key: value for (uid, key), value in self.values.items() if uid == user_id}
 
@@ -176,6 +179,52 @@ async def test_org_provider_key_save_can_publish_existing_personal_masked_key(mo
     saved = decrypt_credentials(json.loads(org_values["openai"]))
     assert saved["api_key"] == "sk-existing-9999"
     assert saved["model"] == "gpt-5.6-luna"
+    # The personal copy would otherwise keep winning over the org key it became.
+    assert await repo.get_setting(user_id, "provider_key.openai") is None
+
+
+@pytest.mark.asyncio
+async def test_admin_edit_updates_personal_key_that_shadows_org_key(monkeypatch):
+    """Personal keys win over org keys, so an admin's edit must land on the personal
+    one; writing the org copy left the old model in place (saved, but still 3.6)."""
+    user_id = "user-1"
+    repo = _FakeSettingsRepo()
+    monkeypatch.setattr(user_router, "_user_settings_repo", repo)
+    monkeypatch.setenv("ENCRYPTION_KEY", Fernet.generate_key().decode())
+    personal = json.dumps(encrypt_credentials({"api_key": "sk-mine-1111", "model": "gemini-3.6-flash"}))
+    org_store = json.dumps(encrypt_credentials({"api_key": "sk-org-2222", "model": "gemini-2.5-pro"}))
+    await repo.set_setting(user_id, "provider_key.google", personal)
+    org_values = {"google": org_store}
+
+    async def yes(*_args):
+        return True
+
+    async def none(*_args):
+        return None
+
+    async def get_org_settings(_user_id, _organization_id):
+        return org_values
+
+    async def save_org_setting(_organization_id, provider, value):
+        org_values[provider] = value
+
+    monkeypatch.setattr(user_router, "_user_is_org_member", yes)
+    monkeypatch.setattr(user_router, "_require_org_provider_key_manager", none)
+    monkeypatch.setattr(user_router, "_get_org_ai_provider_settings", get_org_settings)
+    monkeypatch.setattr(user_router, "_save_org_ai_provider_setting", save_org_setting)
+
+    result = await user_router.save_ai_provider_key(
+        "google",
+        ProviderKeyPayload(api_key="••••••••••••1111", model="gemini-3-flash-preview", models=["gemini-3-flash-preview"]),
+        request=_FakeOrgRequest(),
+        current_token={"sub": user_id},
+    )
+
+    assert result["scope"] == "personal"
+    mine = decrypt_credentials(json.loads((await repo.get_setting(user_id, "provider_key.google")).value))
+    assert mine["api_key"] == "sk-mine-1111"
+    assert mine["model"] == "gemini-3-flash-preview"
+    assert org_values["google"] == org_store
 
 
 @pytest.mark.asyncio

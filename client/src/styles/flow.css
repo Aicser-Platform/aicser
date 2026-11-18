@@ -1,0 +1,40 @@
+/* React Flow (the semantic model's relationship diagram) in Aicser UI tokens, light and dark. */
+.aicser-flow.react-flow {
+  --xy-background-color: transparent;
+  --xy-background-pattern-dots-color-default: rgb(var(--ui-border));
+  --xy-edge-stroke-default: rgb(var(--ui-muted-foreground));
+  --xy-edge-stroke-selected-default: rgb(var(--ui-primary));
+  --xy-edge-stroke-width-default: 1.5;
+  --xy-connectionline-stroke-default: rgb(var(--ui-primary));
+  --xy-node-background-color-default: rgb(var(--ui-card));
+  --xy-node-border-default: 1px solid rgb(var(--ui-border));
+  --xy-node-border-radius-default: var(--ui-radius);
+  --xy-node-color-default: rgb(var(--ui-card-foreground));
+  --xy-node-boxshadow-selected-default: 0 0 0 2px rgb(var(--ui-primary));
+  --xy-handle-background-color-default: rgb(var(--ui-primary));
+  --xy-handle-border-color-default: rgb(var(--ui-card));
+  --xy-minimap-background-color-default: rgb(var(--ui-card));
+  --xy-minimap-mask-background-color-default: rgb(var(--ui-muted) / 0.7);
+  --xy-minimap-node-background-color-default: rgb(var(--ui-muted-foreground));
+  --xy-controls-button-background-color-default: rgb(var(--ui-card));
+  --xy-controls-button-background-color-hover-default: rgb(var(--ui-muted));
+  --xy-controls-button-color-default: rgb(var(--ui-foreground));
+  --xy-controls-button-color-hover-default: rgb(var(--ui-foreground));
+  --xy-controls-button-border-color-default: rgb(var(--ui-border));
+  --xy-selection-background-color-default: rgb(var(--ui-primary) / 0.12);
+  --xy-selection-border-default: 1px dotted rgb(var(--ui-primary));
+}
+
+/* A column's connection points show on hover (and while connecting). */
+.aicser-flow .react-flow__handle {
+  width: 8px;
+  height: 8px;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.aicser-flow .react-flow__node:hover .react-flow__handle,
+.aicser-flow.react-flow .react-flow__handle.connectingfrom,
+.aicser-flow.react-flow .react-flow__handle.connectionindicator:hover,
+.aicser-flow .react-flow__handle[data-joined='true'] {
+  opacity: 1;
+}

@@ -1,0 +1,71 @@
+# Local MinIO for the EE production-build stack (`make ee-minio`): the lakehouse (pipelines' Bronze/Silver/Gold
+# Iceberg tables) is written to MinIO instead of a real bucket, without the slow dev server/client.
+# Used only as an override on top of docker-compose.ee.yml; that file and ee.prod.yml are unchanged.
+# Same DEV_S3_* / DEV_MINIO_* variables (and defaults) as docker-compose.dev.ee.yml, so deploy/.env works for both.
+# Console: http://localhost:9001 (minioadmin / minioadmin). Don't run it next to `make dev-ee` (same ports).
+x-minio-s3: &minio-s3
+  S3_PROVIDER: ${DEV_S3_PROVIDER:-minio}
+  S3_ENDPOINT_URL: ${DEV_S3_ENDPOINT_URL:-http://minio-lake:9000}
+  S3_ACCESS_KEY_ID: ${DEV_S3_ACCESS_KEY_ID:-minioadmin}
+  S3_SECRET_ACCESS_KEY: ${DEV_S3_SECRET_ACCESS_KEY:-minioadmin}
+  S3_BUCKET_NAME: ${DEV_S3_BUCKET_NAME:-aicser-lake}
+  S3_REGION: ${DEV_S3_REGION:-us-east-1}
+
+services:
+  minio-lake:
+    image: ${DEV_MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}
+    container_name: aiser-minio-lake-ee
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${DEV_S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${DEV_S3_SECRET_ACCESS_KEY:-minioadmin}
+    ports:
+      - "${DEV_MINIO_PORT:-9000}:9000"
+      - "${DEV_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_lake_ee_data:/data
+    restart: unless-stopped
+
+  # Creates the bucket once MinIO answers (idempotent), then exits.
+  minio-lake-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      minio-lake:
+        condition: service_started
+    environment:
+      AWS_ACCESS_KEY_ID: ${DEV_S3_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${DEV_S3_SECRET_ACCESS_KEY:-minioadmin}
+      AWS_DEFAULT_REGION: ${DEV_S3_REGION:-us-east-1}
+      S3_BUCKET: ${DEV_S3_BUCKET_NAME:-aicser-lake}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        S3="aws --endpoint-url http://minio-lake:9000 s3api"
+        for i in $$(seq 1 60); do $$S3 list-buckets >/dev/null 2>&1 && break; sleep 2; done
+        $$S3 head-bucket --bucket "$$S3_BUCKET" 2>/dev/null || $$S3 create-bucket --bucket "$$S3_BUCKET"
+        echo "MinIO bucket $$S3_BUCKET ready."
+    restart: "no"
+
+  server:
+    environment: *minio-s3
+    depends_on:
+      minio-lake:
+        condition: service_started
+
+  worker:
+    environment: *minio-s3
+
+  warehouse-compute:
+    environment: *minio-s3
+
+  trino:
+    environment:
+      AICSER_S3_ENDPOINT: ${DEV_S3_ENDPOINT_URL:-http://minio-lake:9000}
+      AICSER_S3_REGION: ${DEV_S3_REGION:-us-east-1}
+      AICSER_S3_KEY: ${DEV_S3_ACCESS_KEY_ID:-minioadmin}
+      AICSER_S3_SECRET: ${DEV_S3_SECRET_ACCESS_KEY:-minioadmin}
+
+volumes:
+  minio_lake_ee_data:
