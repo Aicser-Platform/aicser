@@ -72,32 +72,36 @@ function SavedCharts({ widgets, onAdd }: { widgets: WidgetInstance[]; onAdd: (c:
   if (!charts.length) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('add_panel_no_charts')} />;
   return (
     <div className="add-panel__charts">
-      <Input size="small" allowClear prefix={<SearchOutlined />} placeholder={t('add_panel_search_charts')}
-        value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('add_panel_search_charts')} />
-      <ul className="add-panel__chart-list">
-        {shown.map((c) => {
-          const already = onBoard.has(c.chartId);
-          return (
-            <li key={c.chartId}>
-              <Tooltip title={already ? t('add_panel_on_board') : t('add_panel_chart_hint')} placement="left" mouseEnterDelay={0.4}>
-                <button
-                  type="button"
-                  className="add-panel__chart"
-                  disabled={already}
-                  draggable={!already}
-                  onDragStart={(e) => startCanvasDrag(e, { kind: 'chart', chartId: c.chartId, title: c.title, chartType: c.chartType, w: 6, h: 5 })}
-                  onDragEnd={endCanvasDrag}
-                  onClick={() => onAdd(c)}
-                >
-                  <HolderOutlined className="add-panel__grip" aria-hidden />
-                  <span className="add-panel__chart-icon" aria-hidden>{getDashboardChartTypeIcon(c.chartType)}</span>
-                  <span className="add-panel__chart-title">{c.title}</span>
-                </button>
-              </Tooltip>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="add-panel__search-sticky">
+        <Input size="small" allowClear prefix={<SearchOutlined />} placeholder={t('add_panel_search_charts')}
+          value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('add_panel_search_charts')} />
+      </div>
+      <div className="add-panel__content-scroll">
+        <ul className="add-panel__chart-list">
+          {shown.map((c) => {
+            const already = onBoard.has(c.chartId);
+            return (
+              <li key={c.chartId}>
+                <Tooltip title={already ? t('add_panel_on_board') : t('add_panel_chart_hint')} placement="left" mouseEnterDelay={0.4}>
+                  <button
+                    type="button"
+                    className="add-panel__chart"
+                    disabled={already}
+                    draggable={!already}
+                    onDragStart={(e) => startCanvasDrag(e, { kind: 'chart', chartId: c.chartId, title: c.title, chartType: c.chartType, w: 6, h: 5 })}
+                    onDragEnd={endCanvasDrag}
+                    onClick={() => onAdd(c)}
+                  >
+                    <HolderOutlined className="add-panel__grip" aria-hidden />
+                    <span className="add-panel__chart-icon" aria-hidden>{getDashboardChartTypeIcon(c.chartType)}</span>
+                    <span className="add-panel__chart-title">{c.title}</span>
+                  </button>
+                </Tooltip>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -140,6 +144,7 @@ export function AddPopover({
       <Text type="secondary" className="add-panel__hint">{t('add_panel_hint')}</Text>
       <Tabs
         size="small"
+        tabBarGutter={12}
         activeKey={tab}
         onChange={setTab}
         items={[
@@ -148,22 +153,38 @@ export function AddPopover({
             label: t('add_drawer_blocks'),
             children: (
               <div className="add-panel__body">
-                <Input size="small" allowClear autoFocus prefix={<SearchOutlined />} placeholder={t('search_block_type')}
-                  value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t('search_block_type')} />
-                <WidgetBlockPicker variant="popover" draggable search={search} onSelect={done(onAddBlock)} />
+                <div className="add-panel__search-sticky">
+                  <Input size="small" allowClear autoFocus prefix={<SearchOutlined />} placeholder={t('search_block_type')}
+                    value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t('search_block_type')} />
+                </div>
+                <div className="add-panel__content-scroll">
+                  <WidgetBlockPicker variant="popover" draggable search={search} onSelect={done(onAddBlock)} />
+                </div>
               </div>
             ),
           },
-          { key: 'charts', label: t('add_panel_saved_charts'), children: <div className="add-panel__body"><SavedCharts widgets={widgets} onAdd={done(onAddChart)} /></div> },
+          { key: 'charts', label: t('add_panel_saved_charts'), children: <SavedCharts widgets={widgets} onAdd={done(onAddChart)} /> },
           {
             key: 'filters',
             label: t('add_drawer_filters'),
-            children: <div className="add-panel__body"><FilterPresetPicker onSelect={done(onAddFilterPreset)} onAdvanced={() => { onOpenChange(false); onOpenFilterManager(); }} /></div>,
+            children: (
+              <div className="add-panel__body">
+                <div className="add-panel__content-scroll">
+                  <FilterPresetPicker onSelect={done(onAddFilterPreset)} onAdvanced={() => { onOpenChange(false); onOpenFilterManager(); }} />
+                </div>
+              </div>
+            ),
           },
           {
             key: 'layouts',
             label: t('add_drawer_layouts'),
-            children: <div className="add-panel__body"><LayoutPresetPicker widgets={widgets} onSelect={done(onApplyLayoutPreset)} /></div>,
+            children: (
+              <div className="add-panel__body">
+                <div className="add-panel__content-scroll">
+                  <LayoutPresetPicker widgets={widgets} onSelect={done(onApplyLayoutPreset)} />
+                </div>
+              </div>
+            ),
           },
         ]}
       />
