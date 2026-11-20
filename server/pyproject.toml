@@ -28,7 +28,7 @@ litellm = "^1.97.0"
 supabase = "^2.10.0"
 langchain = "^1.0"
 langchain-openai = "^1.0"
-langgraph = "^1.0"
+langgraph = {version = "^1.0", optional = true}
 boto3 = "^1.26.137"
 pandas = "^2.2.3"
 numpy = "^1.24.0"
@@ -77,11 +77,12 @@ redshift-connector = "^2.1.15"
 databricks-sql-connector = "^4.8.0"
 databricks-sqlalchemy = "^2.0.10"
 databricks-connect = { version = "^14.0.0", optional = true }  # proprietary: add-on, see requirements-databricks.txt
-# Statistical & ML Libraries (Advanced Analytics Modes)
-prophet = ">=1.1.5"
-statsmodels = ">=0.14.1"
-pmdarima = ">=2.0.4"
-scikit-learn = ">=1.4.0"
+# Statistical & ML Libraries (Advanced Analytics Modes / Full Image)
+prophet = {version = ">=1.1.5", optional = true}
+statsmodels = {version = ">=0.14.1", optional = true}
+pmdarima = {version = ">=2.0.4", optional = true}
+scikit-learn = {version = ">=1.4.0", optional = true}
+presidio-analyzer = {version = ">=2.2.360", optional = true}
 scipy = ">=1.12.0"
 # Document parsing for RAG knowledge base
 pdfplumber = ">=0.11.0"
@@ -138,23 +139,25 @@ sentry-sdk = "^2.68.0"
 
 [tool.poetry.extras]
 checkpoint-postgres = ["langgraph-checkpoint-postgres"]
-ml = ["prophet", "scikit-learn"]
+ml = ["prophet", "statsmodels", "pmdarima", "scikit-learn", "presidio-analyzer"]
 ai = ["langgraph", "langgraph-checkpoint-postgres"]
-full = ["prophet", "scikit-learn", "langgraph", "langgraph-checkpoint-postgres"]
+full = ["prophet", "statsmodels", "pmdarima", "scikit-learn", "presidio-analyzer", "langgraph", "langgraph-checkpoint-postgres"]
 
 [project.optional-dependencies]
 ml = [
     "prophet>=1.1.5",
-    "scikit-learn>=1.3.0",
+    "statsmodels>=0.14.1",
+    "pmdarima>=2.0.4",
+    "scikit-learn>=1.4.0",
+    "presidio-analyzer>=2.2.360",
 ]
 ai = [
-    "torch>=2.2.0",
-    "sentence-transformers>=2.3.0",
-    "langgraph>=0.2.0",
+    "langgraph>=1.0",
+    "langgraph-checkpoint-postgres>=3.0.0",
 ]
 full = [
-    "aicser[ml]",
-    "aicser[ai]",
+    "aiser-world-chat2chart[ml]",
+    "aiser-world-chat2chart[ai]",
 ]
 
 [tool.poetry.group.dev.dependencies]
