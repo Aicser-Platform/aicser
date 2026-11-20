@@ -76,6 +76,9 @@ const RAW_TIMEZONES: { value: string; label: string }[] = [
   { value: 'Europe/Moscow', label: 'Moscow' },
   { value: 'Asia/Dubai', label: 'Dubai' },
   { value: 'Asia/Kolkata', label: 'India' },
+  { value: 'Asia/Jakarta', label: 'Jakarta (WIB)' },
+  { value: 'Asia/Makassar', label: 'Makassar (WITA)' },
+  { value: 'Asia/Jayapura', label: 'Jayapura (WIT)' },
   { value: 'Asia/Singapore', label: 'Singapore' },
   { value: 'Asia/Shanghai', label: 'Shanghai' },
   { value: 'Asia/Bangkok', label: 'Bangkok' },
@@ -151,3 +154,76 @@ export const CURRENCY_OPTIONS: CurrencyOption[] = [
   { value: 'HKD', label: 'HKD', symbol: 'HK$' },
   { value: 'NZD', label: 'NZD', symbol: 'NZ$' },
 ];
+
+export async function loadAntdLocale(locale: string): Promise<import('antd/es/locale').Locale> {
+  switch (locale) {
+    case 'id':
+      return (await import('antd/locale/id_ID')).default;
+    case 'zh':
+      return (await import('antd/locale/zh_CN')).default;
+    case 'fr':
+      return (await import('antd/locale/fr_FR')).default;
+    case 'de':
+      return (await import('antd/locale/de_DE')).default;
+    case 'ja':
+      return (await import('antd/locale/ja_JP')).default;
+    case 'km':
+      return (await import('antd/locale/km_KH')).default;
+    case 'es':
+      return (await import('antd/locale/es_ES')).default;
+    case 'th':
+      return (await import('antd/locale/th_TH')).default;
+    case 'vi':
+      return (await import('antd/locale/vi_VN')).default;
+    case 'en':
+    default:
+      return (await import('antd/locale/en_US')).default;
+  }
+}
+
+export async function loadDayjsLocale(locale: string): Promise<string> {
+  const dayjs = (await import('dayjs')).default;
+  switch (locale) {
+    case 'id':
+      await import('dayjs/locale/id');
+      dayjs.locale('id');
+      return 'id';
+    case 'zh':
+      await import('dayjs/locale/zh-cn');
+      dayjs.locale('zh-cn');
+      return 'zh-cn';
+    case 'fr':
+      await import('dayjs/locale/fr');
+      dayjs.locale('fr');
+      return 'fr';
+    case 'de':
+      await import('dayjs/locale/de');
+      dayjs.locale('de');
+      return 'de';
+    case 'ja':
+      await import('dayjs/locale/ja');
+      dayjs.locale('ja');
+      return 'ja';
+    case 'km':
+      await import('dayjs/locale/km');
+      dayjs.locale('km');
+      return 'km';
+    case 'es':
+      await import('dayjs/locale/es');
+      dayjs.locale('es');
+      return 'es';
+    case 'th':
+      await import('dayjs/locale/th');
+      dayjs.locale('th');
+      return 'th';
+    case 'vi':
+      await import('dayjs/locale/vi');
+      dayjs.locale('vi');
+      return 'vi';
+    case 'en':
+    default:
+      await import('dayjs/locale/en');
+      dayjs.locale('en');
+      return 'en';
+  }
+}

@@ -1,6 +1,8 @@
 'use client';
 
 import { App as AntdApp, ConfigProvider, theme } from 'antd';
+import type { Locale as AntdLocale } from 'antd/es/locale';
+import { DEFAULT_LOCALE, loadAntdLocale } from '@/config/locales';
 import { MULTILINGUAL_FONT_STACK } from '@/config/typography';
 import { ThemeModeContext } from './ThemeModeContext';
 import AntdMessageBridgeConnector from './AntdMessageBridgeConnector';
@@ -65,6 +67,29 @@ function readBrandTokens(isDarkMode: boolean): Record<string, string> {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [isDarkMode, setIsDarkMode] = useState<boolean>(() => readEffectiveDarkFromStorage());
+    const [antdLocale, setAntdLocale] = useState<AntdLocale | undefined>(undefined);
+
+    useEffect(() => {
+        let active = true;
+        const applyLocale = (target: string) => {
+            void loadAntdLocale(target)
+                .then((loc) => {
+                    if (active) setAntdLocale(loc);
+                })
+                .catch(() => {});
+        };
+        const initial = (typeof window !== 'undefined' && window.localStorage.getItem('aiser_locale')) || DEFAULT_LOCALE;
+        applyLocale(initial);
+        const onLocaleChange = (e: Event) => {
+            const next = (e as CustomEvent<string>).detail;
+            if (next) applyLocale(next);
+        };
+        window.addEventListener('aicser-locale-change', onLocaleChange);
+        return () => {
+            active = false;
+            window.removeEventListener('aicser-locale-change', onLocaleChange);
+        };
+    }, []);
 
     // Settings page, other tabs, and system preference (when mode is auto)
     useEffect(() => {
@@ -319,6 +344,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return (
         <ThemeModeContext.Provider value={{ isDarkMode, setIsDarkMode: setDarkModeWithPersistence }}>
             <ConfigProvider
+                locale={antdLocale}
                 theme={{
                     algorithm: isDarkMode ? darkAlgorithmKeepingBrand : theme.defaultAlgorithm,
                     token: {
