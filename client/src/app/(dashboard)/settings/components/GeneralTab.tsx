@@ -123,19 +123,24 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     }
   };
 
-  if (loadingSettings) {
-    return (
-      <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
-        <div style={{ textAlign: 'center', padding: 32 }}>
-          <Spin />
-          <div style={{ marginTop: 8, color: 'var(--color-text-secondary)' }}>{t('loading')}</div>
-        </div>
-      </Card>
-    );
-  }
-
   return (
-    <Form form={form} layout="vertical" onFinish={onFinish} initialValues={DEFAULTS} className="flex flex-col gap-5">
+    <>
+      {loadingSettings && (
+        <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
+          <div style={{ textAlign: 'center', padding: 32 }}>
+            <Spin />
+            <div style={{ marginTop: 8, color: 'var(--color-text-secondary)' }}>{t('loading')}</div>
+          </div>
+        </Card>
+      )}
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={onFinish}
+        initialValues={DEFAULTS}
+        className="flex flex-col gap-5"
+        style={loadingSettings ? { display: 'none' } : undefined}
+      >
       <Card
         size="small"
         title={t('language_region')}
@@ -250,7 +255,8 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           </Col>
         </Row>
       </Card>
-    </Form>
+      </Form>
+    </>
   );
 };
 

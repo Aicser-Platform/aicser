@@ -116,8 +116,10 @@ export default function AIResidencyTab(_: TabComponentProps) {
   };
 
   return (
-    <Card size="small" loading={loading}>
-      <Paragraph type="secondary">{t('desc')}</Paragraph>
+    <Card size="small">
+      {loading && <div style={{ padding: 16, textAlign: 'center' }}><Typography.Text type="secondary">...</Typography.Text></div>}
+      <div style={loading ? { display: 'none' } : undefined}>
+        <Paragraph type="secondary">{t('desc')}</Paragraph>
       {deploymentDefault && (
         <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t('deployment_default')} />
       )}
@@ -166,6 +168,7 @@ export default function AIResidencyTab(_: TabComponentProps) {
           </Button>
         </Space>
       </Form>
+      </div>
     </Card>
   );
 }

@@ -12,7 +12,12 @@ type Compliance = {
 };
 
 /** Audit log › Compliance: stream events to a SIEM, how long the log is kept, and legal hold. */
-export function ComplianceSettingsModal({ open, organizationId, onClose }: { open: boolean; organizationId?: string; onClose: () => void }) {
+export function ComplianceSettingsModal(props: { open: boolean; organizationId?: string; onClose: () => void }) {
+  if (!props.open) return null;
+  return <ComplianceSettingsModalInner {...props} />;
+}
+
+function ComplianceSettingsModalInner({ open, organizationId, onClose }: { open: boolean; organizationId?: string; onClose: () => void }) {
   const t = useTranslations('settings.audit');
   const { message } = App.useApp();
   const [form] = Form.useForm();
