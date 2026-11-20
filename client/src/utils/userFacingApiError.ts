@@ -38,6 +38,16 @@ export function formatUserFacingApiError(err: unknown, labelMsg: string, t: Tran
     const st = err.status;
     const dm = detailMessage(err.detail);
 
+    if (err.detail && typeof err.detail === 'object') {
+      const o = err.detail as Record<string, unknown>;
+      if (o.code === 'requires_full_image' || o.error === 'requires_full_image') {
+        return t('api_err_requires_full_image', {
+          label: labelMsg,
+          detail: dm || t('api_err_requires_full_image_default'),
+        });
+      }
+    }
+
     if (st === 404) {
       return t('api_err_not_found', { label: labelMsg });
     }

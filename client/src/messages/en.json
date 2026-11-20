@@ -13127,6 +13127,8 @@
     "yaml_copied": "YAML copied",
     "clipboard_copied": "Copied to clipboard",
     "api_err_not_found": "{label}: API not found. Ensure the server is running with a current build and your plan includes this capability.",
+    "api_err_requires_full_image": "{label}: {detail}",
+    "api_err_requires_full_image_default": "This ML feature requires the full server image (not available in the slim image).",
     "api_err_plan": "{label}: {detail}",
     "api_err_plan_default": "A higher plan is required for this capability.",
     "api_err_unauthorized": "{label}: sign in again, or check that your session is valid.",

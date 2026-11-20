@@ -716,11 +716,25 @@ class PiiScrubber:
     the data structure without seeing the actual sensitive value.
     """
 
-    def scrub_text(self, text: str, keep_entities: frozenset = frozenset()) -> str:
+    def require_ml_ner(self) -> None:
+        """Raise HTTP 400 (`requires_full_image`) when Presidio/spaCy NER is required but absent."""
+        from src.core.optional_deps import require_presidio_extra
+
+        require_presidio_extra("PII NER Scrubbing")
+
+    def scrub_text(
+        self,
+        text: str,
+        keep_entities: frozenset = frozenset(),
+        *,
+        require_ml: bool = False,
+    ) -> str:
         """Replace PII in free text with typed placeholders. ``keep_entities`` lists NER
         entity types a caller needs as context (e.g. LOCATION when classifying places)."""
         if not text or not isinstance(text, str):
             return text
+        if require_ml:
+            self.require_ml_ner()
         if _ensure_presidio():
             return _scrub_dates_of_birth(self._scrub_with_presidio(text, keep_entities))
         return _scrub_dates_of_birth(self._scrub_with_regex(text))

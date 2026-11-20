@@ -296,9 +296,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         await warm_reranker()
                         # The PII scrubber loads its NER model on first use (~20 s); without this
                         # the first AI Decisions preview or scrubbed chat answer pays for it.
-                        from src.modules.data.services.pii_scrubber import _ensure_presidio
+                        from src.core.optional_deps import has_presidio_ml
 
-                        await asyncio.to_thread(_ensure_presidio)
+                        if has_presidio_ml():
+                            from src.modules.data.services.pii_scrubber import _ensure_presidio
+
+                            await asyncio.to_thread(_ensure_presidio)
+                        else:
+                            logger.info("PII NER warm-up skipped: presidio/spaCy not installed (slim image)")
 
                     app.state.search_warmup_task = asyncio.create_task(_warm_search_models())
                 except Exception as e:
