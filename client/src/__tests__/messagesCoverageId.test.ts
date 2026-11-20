@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { computeCoverage } from '../../scripts/i18n-coverage.mjs';
 
 describe('i18n indonesian (id) coverage gate', () => {
-  // Baseline locked at Week 1: 53.00% coverage (8,428 translated keys out of 15,899 total)
+  // Baseline locked at Week 2 (Batch 1: settings, chat_page, chat): 60.91% coverage (9,685 translated keys out of 15,901 total)
   // This baseline threshold increases as translation batches land.
-  const MINIMUM_COVERAGE_PERCENT = 53.0;
-  const MINIMUM_TRANSLATED_KEYS = 8420;
+  const MINIMUM_COVERAGE_PERCENT = 60.5;
+  const MINIMUM_TRANSLATED_KEYS = 9600;
 
   it('maintains or improves id translation coverage without regressions', () => {
     const { totals } = computeCoverage();
