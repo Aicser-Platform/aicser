@@ -43,7 +43,7 @@ export function EmbedWidget({ config = {} }: EmbedWidgetProps) {
   if (!isAllowedUrl(url)) {
     return (
       <div className="widget-center" style={{ padding: 16 }}>
-        <Alert type="error" message="Invalid URL" description="Only http:// and https:// URLs are supported." showIcon />
+        <Alert type="error" title="Invalid URL" description="Only http:// and https:// URLs are supported." showIcon />
       </div>
     );
   }
@@ -64,7 +64,7 @@ export function EmbedWidget({ config = {} }: EmbedWidgetProps) {
         <div className="widget-center" style={{ position: 'absolute', inset: 0 }}>
           <Alert
             type="warning"
-            message="Embed blocked"
+            title="Embed blocked"
             description="This site may not allow embedding via iframe. Try opening it directly."
             showIcon
           />

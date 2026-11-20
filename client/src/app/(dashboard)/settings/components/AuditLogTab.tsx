@@ -251,7 +251,7 @@ export const AuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   };
 
   return (
-    <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" message={t('no_permission')} showIcon />}>
+    <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" title={t('no_permission')} showIcon />}>
       <ComplianceSettingsModal open={complianceOpen} organizationId={currentOrganization?.id ? String(currentOrganization.id) : undefined} onClose={() => setComplianceOpen(false)} />
       <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
@@ -268,7 +268,7 @@ export const AuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           options={FILTERABLE_CATEGORIES.map((c) => ({ value: c, label: c }))}
         />
 
-        {error ? <Alert type="error" message={error} style={{ marginBottom: 16 }} showIcon /> : null}
+        {error ? <Alert type="error" title={error} style={{ marginBottom: 16 }} showIcon /> : null}
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}>

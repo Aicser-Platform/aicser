@@ -129,7 +129,7 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   }, [points, t]);
 
   return (
-    <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" message={t('no_permission')} showIcon />}>
+    <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" title={t('no_permission')} showIcon />}>
       <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
           <Text type="secondary">{t('subtitle')}</Text>
@@ -142,7 +142,7 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           />
         </div>
 
-        {error ? <Alert type="error" message={error} style={{ marginBottom: 16 }} showIcon /> : null}
+        {error ? <Alert type="error" title={error} style={{ marginBottom: 16 }} showIcon /> : null}
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}>
@@ -158,7 +158,7 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                 <Statistic
                   title={<TitleWithHint label={t('kpi_grounding')} hint={t('kpi_grounding_hint')} />}
                   value={pct(summary.avg_grounding_score)}
-                  valueStyle={summary.avg_grounding_score < 0.6 ? { color: 'var(--ant-color-warning)' } : undefined}
+                  styles={summary.avg_grounding_score < 0.6 ? { content: { color: 'var(--ant-color-warning)' } } : undefined}
                 />
               ) : null}
               {summary.thumbs_up_rate != null ? (
@@ -167,7 +167,7 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               <Statistic
                 title={<TitleWithHint label={t('kpi_error_rate')} hint={t('kpi_error_rate_hint')} />}
                 value={pct(summary.error_rate)}
-                valueStyle={summary.error_rate > 0.05 ? { color: 'var(--ant-color-error)' } : undefined}
+                styles={summary.error_rate > 0.05 ? { content: { color: 'var(--ant-color-error)' } } : undefined}
               />
               {summary.avg_latency_ms != null ? (
                 <Statistic

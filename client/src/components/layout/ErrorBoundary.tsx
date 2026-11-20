@@ -165,7 +165,7 @@ class ErrorBoundary extends Component<Props, State> {
                   ) : null}
                   {process.env.NODE_ENV === 'development' && (
                     <Alert
-                      message="Development Error Details"
+                      title="Development Error Details"
                       description={
                         <div>
                           <Text code>{this.state.error?.message}</Text>

@@ -634,7 +634,7 @@ export function WorkbookEditor({ workbookId }: { workbookId: string }) {
   };
 
   if (loadError) {
-    return <Alert type="error" showIcon message={loadError} action={<Button size="small" onClick={() => void load()}>{t('retry')}</Button>} />;
+    return <Alert type="error" showIcon title={loadError} action={<Button size="small" onClick={() => void load()}>{t('retry')}</Button>} />;
   }
   if (!wb || !model) return <div className="wb-loading"><Spin /></div>;
 
@@ -790,7 +790,7 @@ export function WorkbookEditor({ workbookId }: { workbookId: string }) {
         <Alert
           type="warning"
           showIcon
-          message={t('gone')}
+          title={t('gone')}
           action={
             <Space>
               <Button size="small" onClick={() => void restoreDeleted()}>{t('gone_restore')}</Button>
@@ -800,10 +800,10 @@ export function WorkbookEditor({ workbookId }: { workbookId: string }) {
         />
       ) : null}
       {saveState === 'conflict' ? (
-        <Alert type="warning" showIcon message={t('conflict')} action={<Button size="small" onClick={() => void load()}>{t('reload')}</Button>} />
+        <Alert type="warning" showIcon title={t('conflict')} action={<Button size="small" onClick={() => void load()}>{t('reload')}</Button>} />
       ) : null}
       {readOnly ? (
-        <Alert type="info" showIcon message={t('read_only')}
+        <Alert type="info" showIcon title={t('read_only')}
           action={<Button size="small" onClick={() => onMore({ key: 'duplicate' } as never)}>{t('make_copy')}</Button>} />
       ) : null}
 

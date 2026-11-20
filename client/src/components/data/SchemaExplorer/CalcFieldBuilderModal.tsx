@@ -101,7 +101,7 @@ export function CalcFieldBuilderModal({ open, columnOptions, onCancel, onSave }:
       width={520}
       destroyOnHidden
     >
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('calc_save_where_hint')} />
+      <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t('calc_save_where_hint')} />
       <Radio.Group
         value={mode}
         onChange={(e) => setMode(e.target.value)}
@@ -114,9 +114,9 @@ export function CalcFieldBuilderModal({ open, columnOptions, onCancel, onSave }:
         ]}
       />
       {mode === 'simple' ? (
-        <Space direction="vertical" style={{ width: '100%' }} size={10}>
+        <Space orientation="vertical" style={{ width: '100%' }} size={10}>
           {!columnOptions.length ? (
-            <Alert type="warning" showIcon message={t('calc_no_columns')} />
+            <Alert type="warning" showIcon title={t('calc_no_columns')} />
           ) : null}
           <Input placeholder={t('calc_field_name')} value={label} onChange={(e) => setLabel(e.target.value)} />
           <Select

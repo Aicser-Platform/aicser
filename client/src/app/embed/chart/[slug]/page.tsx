@@ -100,7 +100,7 @@ function EmbedChartView({ slug, session }: { slug: string; session: EmbedSession
     return (
       <div style={themeStyle} data-theme={dataTheme}>
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 360 }}>
-          <Spin size="large" tip="Loading chart..." />
+          <Spin size="large" description="Loading chart..." />
         </div>
       </div>
     );
@@ -109,7 +109,7 @@ function EmbedChartView({ slug, session }: { slug: string; session: EmbedSession
   if (error) {
     return (
       <div style={themeStyle} data-theme={dataTheme}>
-        <Alert type="error" message="Unable to load chart" description={error} showIcon style={{ margin: 24 }} />
+        <Alert type="error" title="Unable to load chart" description={error} showIcon style={{ margin: 24 }} />
       </div>
     );
   }
@@ -131,7 +131,7 @@ function EmbedChartView({ slug, session }: { slug: string; session: EmbedSession
   if (!optionJson) {
     return (
       <div style={themeStyle} data-theme={dataTheme}>
-        <Alert type="warning" message="Chart has no renderable options" showIcon style={{ margin: 24 }} />
+        <Alert type="warning" title="Chart has no renderable options" showIcon style={{ margin: 24 }} />
       </div>
     );
   }

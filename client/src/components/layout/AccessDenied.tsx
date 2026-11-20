@@ -29,7 +29,7 @@ export function AccessDenied({
         type="warning"
         showIcon
         icon={<LockOutlined />}
-        message={title ?? t('title')}
+        title={title ?? t('title')}
         description={
           <Space orientation="vertical" size={12} style={{ width: '100%' }}>
             <span>{description ?? t('description')}</span>

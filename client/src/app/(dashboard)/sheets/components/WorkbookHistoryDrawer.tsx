@@ -66,7 +66,7 @@ export function WorkbookHistoryDrawer({
 
   return (
     <>
-      <Drawer open={open} onClose={onClose} width={440} title={<Space><HistoryOutlined />{t('version_history')}</Space>}>
+      <Drawer open={open} onClose={onClose} size={440} title={<Space><HistoryOutlined />{t('version_history')}</Space>}>
         {items === null ? <Spin /> : !items.length ? <Empty description={t('version_none')} /> : (
           <List
             dataSource={items}
@@ -76,7 +76,7 @@ export function WorkbookHistoryDrawer({
                   <Button key="p" size="small" icon={<EyeOutlined />} loading={busy === v.id} onClick={() => void show(v)}>{t('version_preview')}</Button>,
                 ]}
               >
-                <Space direction="vertical" size={0}>
+                <Space orientation="vertical" size={0}>
                   <Text strong>{when(v.updated_at)}</Text>
                   <Space size={6} wrap>
                     <Text type="secondary">{v.is_me ? t('version_by_you') : t('version_by_other')}</Text>

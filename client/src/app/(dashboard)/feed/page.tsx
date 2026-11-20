@@ -518,7 +518,7 @@ const SocialFeedPage: React.FC = () => {
           </div>
         </div>
         {highlightPostId && !resolvedHighlightId ? (
-          <Alert type="info" showIcon message={t('finding_post')} className="mx-auto mt-3 max-w-[1100px]" />
+          <Alert type="info" showIcon title={t('finding_post')} className="mx-auto mt-3 max-w-[1100px]" />
         ) : null}
       </div>
 

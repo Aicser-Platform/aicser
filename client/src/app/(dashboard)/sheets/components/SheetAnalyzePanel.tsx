@@ -429,7 +429,7 @@ export function SheetAnalyzePanel({
               <Alert
                 type="warning"
                 showIcon
-                message={t('analyze_columns_changed')}
+                title={t('analyze_columns_changed')}
                 action={(
                   <Button size="small" onClick={() => active && applyFieldSuggestions(active)}>
                     {t('analyze_reset_fields')}
@@ -464,7 +464,7 @@ export function SheetAnalyzePanel({
           <div className="wb-analyze__source">
             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>{t('pivot_step_table')}</Text>
             {gridSelection && active?.id === 'selection' && !pickOtherTable ? (
-              <Space direction="vertical" size={4}>
+              <Space orientation="vertical" size={4}>
                 <Text style={{ fontSize: 13 }}>{t('pivot_using_selection', { area: gridSelection.label })}</Text>
                 {datasets.length > 1 ? (
                   <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setPickOtherTable(true)}>

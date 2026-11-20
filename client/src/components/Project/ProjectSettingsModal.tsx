@@ -284,7 +284,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                     : [<Tag key="role">{member.role_display_name || roleLabel(member.role_id)}</Tag>]
                 }
               >
-                <Space direction="vertical" size={0}>
+                <Space orientation="vertical" size={0}>
                   <Text style={{ fontSize: 13 }}>{label}</Text>
                   {member.full_name && (
                     <Text type="secondary" style={{ fontSize: 11 }}>

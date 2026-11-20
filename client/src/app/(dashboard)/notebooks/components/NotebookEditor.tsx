@@ -1123,7 +1123,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     }
   };
 
-  if (loadError) return <Alert type="error" showIcon message={loadError} action={<Button onClick={() => router.push('/notebooks')}>{t('back')}</Button>} />;
+  if (loadError) return <Alert type="error" showIcon title={loadError} action={<Button onClick={() => router.push('/notebooks')}>{t('back')}</Button>} />;
   if (!nb) return <div className="nb-loading"><Spin /></div>;
 
   const saveLabel = { saved: t('saved'), dirty: t('unsaved'), saving: t('saving'), conflict: t('conflict_short'), error: t('save_error') }[saveState];
@@ -1266,13 +1266,13 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       ) : null}
 
       {saveState === 'conflict' ? (
-        <Alert type="warning" showIcon message={t('conflict')} action={<Button size="small" onClick={() => void load()}>{t('reload')}</Button>} />
+        <Alert type="warning" showIcon title={t('conflict')} action={<Button size="small" onClick={() => void load()}>{t('reload')}</Button>} />
       ) : null}
       {readOnly ? (
         <Alert
           type="info"
           showIcon
-          message={t('read_only')}
+          title={t('read_only')}
           action={<Button size="small" onClick={() => onMore({ key: 'duplicate' } as never)}>{t('make_copy')}</Button>}
         />
       ) : null}
@@ -1490,7 +1490,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
         onCancel={() => setSaveOpen(false)}
         destroyOnHidden
       >
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <Text type="secondary">{t('save_dataset_desc')}</Text>
           <Select value={saveFrom} onChange={setSaveFrom} style={{ width: '100%' }} options={resultInfos.map((r) => ({ value: r.name, label: r.name }))} aria-label={t('save_which')} />
           <Input value={saveName} maxLength={120} onChange={(e) => setSaveName(e.target.value)} aria-label={t('dataset_name')} placeholder={t('dataset_name')} />

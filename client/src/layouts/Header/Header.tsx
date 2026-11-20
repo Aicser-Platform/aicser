@@ -628,7 +628,7 @@ export const LayoutHeader: React.FC<Props> = ({
             <Alert
               type="info"
               showIcon
-              message={t('org_join_existing_hint')}
+              title={t('org_join_existing_hint')}
               style={{ marginBottom: 16 }}
             />
           )}

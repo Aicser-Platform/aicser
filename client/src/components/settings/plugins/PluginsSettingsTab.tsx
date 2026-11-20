@@ -67,7 +67,7 @@ export const PluginsSettingsTab: React.FC<PluginsSettingsTabProps> = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12" data-testid="plugins-loading">
-        <Spin tip="Loading installed plug-ins..." />
+        <Spin description="Loading installed plug-ins..." />
       </div>
     );
   }
@@ -77,7 +77,7 @@ export const PluginsSettingsTab: React.FC<PluginsSettingsTabProps> = () => {
       <Alert
         type="error"
         showIcon
-        message="Could not load plug-ins"
+        title="Could not load plug-ins"
         description={error instanceof Error ? error.message : 'Unexpected error'}
       />
     );

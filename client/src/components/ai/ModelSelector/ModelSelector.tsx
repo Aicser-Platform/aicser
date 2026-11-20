@@ -687,7 +687,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     <Alert
                         type="warning"
                         showIcon
-                        message={t('api_key_model_invalid')}
+                        title={t('api_key_model_invalid')}
                         description={
                             <>
                                 {t('update_key_model_under')}{' '}
@@ -699,7 +699,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
                 {visibleModels.some(m => !m.available) && (
                     <Alert
-                        message={t('some_models_unavailable')}
+                        title={t('some_models_unavailable')}
                         description={t('configure_api_keys_enable_models')}
                         type="warning"
                         showIcon

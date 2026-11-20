@@ -320,7 +320,7 @@ export function RelationshipDetailsPanel({ relationship, onClose, onChanged }: R
           type="warning"
           showIcon
           icon={<InfoCircleOutlined />}
-          message={t('erd_relationship_connects', {
+          title={t('erd_relationship_connects', {
             from: shortTableName(relationship.from_table),
             to: shortTableName(relationship.to_table),
           })}
@@ -328,7 +328,7 @@ export function RelationshipDetailsPanel({ relationship, onClose, onChanged }: R
         />
 
         {updateMutation.isError && (
-          <Alert type="error" message={t('erd_relationship_save_failed')} showIcon />
+          <Alert type="error" title={t('erd_relationship_save_failed')} showIcon />
         )}
       </div>
 

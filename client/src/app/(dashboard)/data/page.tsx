@@ -526,7 +526,7 @@ const DataSourcesPage: React.FC = () => {
                     <DocumentLibraries />
                 ) : (
                     <DashboardPageShell maxWidth={720}>
-                        <Alert type="warning" showIcon message={t('no_data_permission')} description={t('no_data_permission_desc')} />
+                        <Alert type="warning" showIcon title={t('no_data_permission')} description={t('no_data_permission_desc')} />
                     </DashboardPageShell>
                 )
             }
@@ -571,7 +571,7 @@ const DataSourcesPage: React.FC = () => {
                     type="info"
                     showIcon
                     style={{ marginBottom: 16 }}
-                    message={t('dedupe_file_sources_banner', { count: duplicateFileCount })}
+                    title={t('dedupe_file_sources_banner', { count: duplicateFileCount })}
                     action={
                         <Button size="small" loading={dedupeBusy} onClick={() => void handleDedupeFileSources()}>
                             {t('dedupe_file_sources_action')}
@@ -773,7 +773,7 @@ const DataSourcesPage: React.FC = () => {
                                         showIcon
                                         icon={<SafetyOutlined />}
                                         style={{ marginTop: 12 }}
-                                        message={t('profile_pii_warning', { n: piiCols.length })}
+                                        title={t('profile_pii_warning', { n: piiCols.length })}
                                         description={t('profile_pii_desc')}
                                     />
                                 )}
@@ -830,7 +830,7 @@ const DataSourcesPage: React.FC = () => {
                                 <Alert
                                     type="info"
                                     showIcon
-                                    message={t('profile_high_null_warning', { n: highNullCols.length })}
+                                    title={t('profile_high_null_warning', { n: highNullCols.length })}
                                     description={highNullCols.map((c: any) => c.column || c.name).join(', ')}
                                 />
                             )}

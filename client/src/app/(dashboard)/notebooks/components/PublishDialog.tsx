@@ -141,7 +141,7 @@ export function PublishDialog({
       onCancel={onClose}
       destroyOnHidden
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={12} style={{ width: '100%' }}>
         <label className="nb-field" style={{ width: '100%' }}>
           <span className="nb-field__label">{t('publish_title')}</span>
           <Input value={title} maxLength={160} onChange={(e) => setTitle(e.target.value)} />
@@ -163,11 +163,11 @@ export function PublishDialog({
         {source?.kind === 'sql' ? (
           <Text type="secondary">{t('publish_live', { name: source.name })}</Text>
         ) : source?.kind === 'python' ? (
-          <Alert type="info" showIcon message={t('publish_snapshot', { name: source.name })} />
+          <Alert type="info" showIcon title={t('publish_snapshot', { name: source.name })} />
         ) : (
-          <Alert type="warning" showIcon message={t('publish_missing')} />
+          <Alert type="warning" showIcon title={t('publish_missing')} />
         )}
-        {model?.dropped.length ? <Alert type="warning" showIcon message={t('publish_dropped')} /> : null}
+        {model?.dropped.length ? <Alert type="warning" showIcon title={t('publish_dropped')} /> : null}
         {target === 'library' ? (
           <Checkbox checked={alsoShare} onChange={(e) => setAlsoShare(e.target.checked)}>
             {t('publish_also_share')}

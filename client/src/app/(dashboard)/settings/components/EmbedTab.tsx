@@ -358,7 +358,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         <Alert
           type="warning"
           showIcon
-          message={t('embed_no_permission')}
+          title={t('embed_no_permission')}
           description={t('embed_no_permission_desc')}
         />
       }
@@ -590,9 +590,9 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       >
         {createdToken ? (
           <>
-            <Alert type="info" showIcon message={t('embed_token_public_notice')} style={{ marginBottom: 12 }} />
+            <Alert type="info" showIcon title={t('embed_token_public_notice')} style={{ marginBottom: 12 }} />
             {createdToken.allowed_domains?.length ? null : (
-              <Alert type="warning" showIcon message={t('embed_token_no_domains_warning')} style={{ marginBottom: 16 }} />
+              <Alert type="warning" showIcon title={t('embed_token_no_domains_warning')} style={{ marginBottom: 16 }} />
             )}
             {embedScopeOptions.length > 1 ? (
               <Select

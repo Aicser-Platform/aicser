@@ -111,7 +111,7 @@ export function ColumnMeaningModal({
             options={COLUMN_ROLES.map((r) => ({
               value: r,
               label: (
-                <Space direction="vertical" size={0}>
+                <Space orientation="vertical" size={0}>
                   <span>{tr(`role_${r}`)}</span>
                   <Text type="secondary" style={{ fontSize: 12 }}>{tr(`role_${r}_desc`)}</Text>
                 </Space>
@@ -140,7 +140,7 @@ export function ColumnMeaningModal({
               </Button>
             </Space>
           ) : (
-            <Alert style={{ marginTop: 8 }} type="info" showIcon message={t('meaning_model_needs_table')} />
+            <Alert style={{ marginTop: 8 }} type="info" showIcon title={t('meaning_model_needs_table')} />
           )}
         </>
       ) : null}

@@ -431,7 +431,7 @@ export function PerformancePane({
                 <Alert
                   type="warning"
                   showIcon
-                  message={t('plan_error_prefix')}
+                  title={t('plan_error_prefix')}
                   description={perfPlanError}
                   style={{ marginBottom: 0 }}
                 />

@@ -74,7 +74,7 @@ export function VersionHistoryDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      width={560}
+      size={560}
       title={<Space><HistoryOutlined />{t('version_history')}</Space>}
       extra={selected && canRestore ? (
         <Button type="primary" loading={restoring} onClick={() => void restore()}>{t('version_restore')}</Button>
@@ -91,7 +91,7 @@ export function VersionHistoryDrawer({
                 className={v.id === selected ? 'nb-history__item nb-history__item--on' : 'nb-history__item'}
                 onClick={() => setSelected(v.id)}
               >
-                <Space direction="vertical" size={0}>
+                <Space orientation="vertical" size={0}>
                   <Text strong>{when(v.updated_at)}</Text>
                   <Space size={6} wrap>
                     <Text type="secondary">{v.is_me ? t('version_by_you') : t('version_by_other')}</Text>

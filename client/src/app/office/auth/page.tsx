@@ -25,7 +25,7 @@ export default function OfficeAuth() {
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--ant-color-bg-container)' }}>
       <Script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" onLoad={() => Office.onReady(() => setOfficeReady(true))} />
-      {error ? <Result status="error" title={t('sign_in_failed')} subTitle={error} /> : <Spin tip={t('signing_in')}><div style={{ width: 200, height: 80 }} /></Spin>}
+      {error ? <Result status="error" title={t('sign_in_failed')} subTitle={error} /> : <Spin description={t('signing_in')}><div style={{ width: 200, height: 80 }} /></Spin>}
     </div>
   );
 }

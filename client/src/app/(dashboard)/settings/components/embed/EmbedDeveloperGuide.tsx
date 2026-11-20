@@ -117,7 +117,7 @@ const dashboard = embedDashboard(document.getElementById("analytics"), "<DASHBOA
 
   return (
     <Card size="small" title={t('title')}>
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={12} style={{ width: '100%' }}>
         <Paragraph type="secondary" style={{ margin: 0 }}>
           {t('intro')}
         </Paragraph>

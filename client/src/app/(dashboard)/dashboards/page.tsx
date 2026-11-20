@@ -1346,7 +1346,7 @@ export default function NewDashboardStudio() {
       loadingFallback={<AppLoadingIndicator variant="inline" tip={t('loading_dashboards')} />}
       fallback={
         <div style={{ padding: 48, maxWidth: 480, margin: '0 auto' }}>
-          <Alert type="warning" showIcon message={t('no_dashboard_permission')} description={t('no_dashboard_permission_desc')} />
+          <Alert type="warning" showIcon title={t('no_dashboard_permission')} description={t('no_dashboard_permission_desc')} />
         </div>
       }
     >

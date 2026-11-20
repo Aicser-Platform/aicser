@@ -64,7 +64,7 @@ export const OtherProjectConnections: React.FC<{ projectSourceIds: Set<string> }
       <Button type="link" size="small" style={{ alignSelf: 'flex-start', paddingInline: 0 }} onClick={() => setOpen(true)}>
         {t('other_projects_title', { count: others.length })}
       </Button>
-      <Drawer open={open} onClose={() => setOpen(false)} width={520} title={t('other_projects_title', { count: others.length })} destroyOnHidden>
+      <Drawer open={open} onClose={() => setOpen(false)} size={520} title={t('other_projects_title', { count: others.length })} destroyOnHidden>
         <List
           size="small"
           dataSource={others}

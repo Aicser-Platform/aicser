@@ -5,6 +5,7 @@ import { Alert, Card, Progress, Skeleton, Space, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { fetchApi } from '@/utils/api';
+import { isEnterpriseEdition } from '@/utils/appPaths';
 import type { TabComponentProps } from '@/app/(dashboard)/settings/page';
 import { useDataSources } from '@/hooks/useDataSources';
 
@@ -28,6 +29,10 @@ export const CommunityUsageTab: React.FC<TabComponentProps> = () => {
   const [usage, setUsage] = useState<CeUsageResponse['usage'] | null>(null);
 
   useEffect(() => {
+    if (!isEnterpriseEdition()) {
+      setLoading(false);
+      return;
+    }
     let alive = true;
     fetchApi('/api/billing/usage')
       .then((res: CeUsageResponse) => {
@@ -54,7 +59,7 @@ export const CommunityUsageTab: React.FC<TabComponentProps> = () => {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message={t('surface_ce_self_host_title')}
+        title={t('surface_ce_self_host_title')}
         description={t('ce_byok_desc')}
       />
       {loading ? (

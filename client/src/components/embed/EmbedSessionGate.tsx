@@ -34,7 +34,7 @@ export function EmbedSessionGate({
         <Alert
           banner
           type="warning"
-          message={t('expired')}
+          title={t('expired')}
           style={{ position: 'sticky', top: 0, zIndex: 20 }}
         />
       ) : null}

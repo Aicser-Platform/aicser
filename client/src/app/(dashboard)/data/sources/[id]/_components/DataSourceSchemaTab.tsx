@@ -325,7 +325,7 @@ export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSo
                     <Text type="secondary">{t('preview_data_loading')}</Text>
                   </div>
                 ) : preview.status === 'error' ? (
-                  <Alert type="error" showIcon message={preview.error || t('preview_data_error')} />
+                  <Alert type="error" showIcon title={preview.error || t('preview_data_error')} />
                 ) : preview.rows && preview.rows.length > 0 ? (
                   <div
                     className="aiser-themed-scrollbar"

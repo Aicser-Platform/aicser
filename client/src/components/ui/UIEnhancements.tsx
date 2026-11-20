@@ -187,11 +187,11 @@ const UIEnhancements: React.FC<UIEnhancementsProps> = ({
                   <Statistic
                     title={metric.label}
                     value={metric.value}
-                    valueStyle={{ 
+                    styles={{ content: { 
                       color: metric.color || '#262626',
                       fontSize: '20px',
                       fontWeight: 600
-                    }}
+                    } }}
                     prefix={
                       metric.trend === 'up' ? (
                         <span style={{ color: '#52c41a' }}>↗</span>

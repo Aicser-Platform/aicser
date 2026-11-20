@@ -259,7 +259,7 @@ export function FormulaAssistantPanel({
               <Text strong>{cellSnap.cell_value}</Text>
             </Text>
           ) : (
-            <Alert type="info" showIcon message={t('formula_explain_empty')} />
+            <Alert type="info" showIcon title={t('formula_explain_empty')} />
           )}
           <Space wrap style={{ marginTop: 8 }}>
             <Button
@@ -285,7 +285,7 @@ export function FormulaAssistantPanel({
               </Button>
             ) : null}
           </Space>
-          {error ? <Alert type="warning" showIcon message={error} style={{ marginTop: 8 }} /> : null}
+          {error ? <Alert type="warning" showIcon title={error} style={{ marginTop: 8 }} /> : null}
           {explain ? (
             <div className="wb-formula__explain" style={{ marginTop: 10 }}>
               <Text>{explain.plain_summary}</Text>
@@ -367,7 +367,7 @@ export function FormulaAssistantPanel({
             </Space>
             <Text type="secondary" style={{ fontSize: 11 }}>{t('formula_lookup_live_hint')}</Text>
           </div>
-          {error ? <Alert type="warning" showIcon message={error} /> : null}
+          {error ? <Alert type="warning" showIcon title={error} /> : null}
           <Button
             type="primary"
             icon={<BulbOutlined />}

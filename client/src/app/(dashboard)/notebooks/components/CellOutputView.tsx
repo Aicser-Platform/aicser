@@ -55,7 +55,7 @@ export function CellOutputView({
         key="err"
         type="error"
         showIcon
-        message={<pre className="nb-output-error">{output.text}</pre>}
+        title={<pre className="nb-output-error">{output.text}</pre>}
         action={fix ? <Button size="small" icon={<BulbOutlined />} loading={fixing} onClick={() => void fix()}>{t('fix_with_ai')}</Button> : undefined}
       />,
     );

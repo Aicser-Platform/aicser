@@ -60,7 +60,7 @@ export function LakehouseServingNotice({
       type={pending ? 'warning' : 'info'}
       showIcon
       icon={pending ? <ClockCircleOutlined /> : <DeploymentUnitOutlined />}
-      message={pending ? t('pending_title') : t('served_title')}
+      title={pending ? t('pending_title') : t('served_title')}
       description={pending ? t('pending_desc') : t('served_desc')}
       style={{ marginTop: 8 }}
     />

@@ -160,13 +160,13 @@ const ConnectorSyncPanel: React.FC<{ dataSourceId: string | null; canManage: boo
         {t('connector_sync_title')}
       </Text>
       {!canManage ? (
-        <Alert type="info" showIcon message={t('access_denied_desc')} />
+        <Alert type="info" showIcon title={t('access_denied_desc')} />
       ) : !statusLoading && !configured.sharepoint && !configured.confluence ? (
         // Nothing connected: say what's needed and who does it, instead of a disabled form.
         <Alert
           type="info"
           showIcon
-          message={t('connectors_none_title')}
+          title={t('connectors_none_title')}
           description={t('connectors_none_desc')}
         />
       ) : (
@@ -192,7 +192,7 @@ const ConnectorSyncPanel: React.FC<{ dataSourceId: string | null; canManage: boo
             loading={statusLoading}
           />
           {!statusLoading && !ready ? (
-            <Alert type="warning" showIcon message={t('connector_not_configured')} />
+            <Alert type="warning" showIcon title={t('connector_not_configured')} />
           ) : null}
           {connectorType === 'sharepoint' ? (
             <Input

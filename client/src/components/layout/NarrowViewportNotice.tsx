@@ -50,7 +50,7 @@ export const NarrowViewportNotice: React.FC<NarrowViewportNoticeProps> = ({
         type="warning"
         showIcon
         icon={<DesktopOutlined />}
-        message={message}
+        title={message}
         closable
         onClose={() => {
           setDismissed(true);

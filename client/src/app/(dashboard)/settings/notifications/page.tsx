@@ -14,7 +14,7 @@ export default function NotificationsSettingsRedirect() {
   }, [router]);
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-      <Spin tip={`${t('tab_notifications')}...`} />
+      <Spin description={`${t('tab_notifications')}...`} />
     </div>
   );
 }

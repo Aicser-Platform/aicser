@@ -46,7 +46,7 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
   if (viewer.isLoading) {
     return (
       <div className="feed-dashboard-viewer feed-dashboard-viewer--loading">
-        <Spin tip={t('detail_loading_dashboard')} />
+        <Spin description={t('detail_loading_dashboard')} />
       </div>
     );
   }

@@ -247,7 +247,7 @@ export default function RecipePage() {
             type="error"
             showIcon
             style={{ marginTop: 8 }}
-            message={blocked ? t('contract_blocked') : t('contract_warning')}
+            title={blocked ? t('contract_blocked') : t('contract_warning')}
             description={contracts
               .map((c) => t('contract_line', { table: c.table ?? t('this_table'), columns: c.breaches.map((b) => b.column).filter(Boolean).join(', ') }))
               .join(' ')}
@@ -258,12 +258,12 @@ export default function RecipePage() {
             type={dependents.length ? 'warning' : 'info'}
             showIcon
             style={{ marginTop: 8 }}
-            message={t('impact_title', {
+            title={t('impact_title', {
               removed: impact.data!.removed.length,
               retyped: impact.data!.retyped.length,
             })}
             description={
-              <Space direction="vertical" size={2}>
+              <Space orientation="vertical" size={2}>
                 <Text>
                   {[...impact.data!.removed, ...impact.data!.retyped.map((r) => `${r.column} (${r.from} → ${r.to})`)].join(', ')}
                 </Text>
@@ -287,7 +287,7 @@ export default function RecipePage() {
         <Input value={tableName} onChange={(e) => setTableName(e.target.value)} maxLength={200} style={{ marginTop: 8 }} aria-label={t('field_name')} />
       </Modal>
 
-      <Drawer open={historyOpen} onClose={() => setHistoryOpen(false)} title={t('history')} width={460}>
+      <Drawer open={historyOpen} onClose={() => setHistoryOpen(false)} title={t('history')} size={460}>
         <List
           loading={versions.isLoading}
           locale={{ emptyText: t('no_versions') }}
@@ -303,7 +303,7 @@ export default function RecipePage() {
               <List.Item.Meta
                 title={t('version_label', { version: v.version })}
                 description={
-                  <Space direction="vertical" size={2}>
+                  <Space orientation="vertical" size={2}>
                     {v.note ? <Text>{v.note}</Text> : null}
                     <Text type="secondary">
                       {t('version_meta', { steps: v.steps.length, date: v.created_at ? new Date(v.created_at).toLocaleString() : '' })}

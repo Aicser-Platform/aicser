@@ -178,7 +178,7 @@ export function DashboardWidgetCell({
         </Tooltip>
       ) : null}
       {(widget.chartQuery as { needs_review?: string } | undefined)?.needs_review === 'fanout_join' ? (
-        <Alert type="warning" showIcon banner message={t('widget_needs_review_fanout')} style={{ marginBottom: 6 }} />
+        <Alert type="warning" showIcon banner title={t('widget_needs_review_fanout')} style={{ marginBottom: 6 }} />
       ) : null}
       {drillPath.length > 0 && drillState ? (
         <DrillBreadcrumb

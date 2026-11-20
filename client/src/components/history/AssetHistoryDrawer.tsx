@@ -39,7 +39,7 @@ export function AssetHistoryDrawer({ assetType, assetId, onClose, onRestored }: 
 
   const revisions = data?.revisions ?? [];
   return (
-    <Drawer open={!!assetId} onClose={onClose} title={t('title')} width={380} destroyOnHidden>
+    <Drawer open={!!assetId} onClose={onClose} title={t('title')} size={380} destroyOnHidden>
       <HistoryList
         loading={isLoading}
         restoreLabel={t('restore')}

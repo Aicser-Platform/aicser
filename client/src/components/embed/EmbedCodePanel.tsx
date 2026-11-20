@@ -57,13 +57,13 @@ export function EmbedCodePanel({
   if (loading) {
     return (
       <div className="embed-code-panel" style={{ textAlign: 'center', padding: 24 }}>
-        <Spin tip={t('embed_generating')} />
+        <Spin description={t('embed_generating')} />
       </div>
     );
   }
 
   if (!embedUrl) {
-    return <Alert type="info" showIcon message={t('embed_no_url')} />;
+    return <Alert type="info" showIcon title={t('embed_no_url')} />;
   }
 
   return (

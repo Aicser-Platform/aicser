@@ -28,7 +28,7 @@ export function DashboardBuildLiveBanner({ progress, isConnected, transport }: P
       showIcon
       icon={<DashboardOutlined />}
       className="mb-3"
-      message={
+      title={
         <span className="flex flex-wrap items-center gap-2">
           <strong>{t('build_live_title')}</strong>
           {progress.dashboard_name ? (

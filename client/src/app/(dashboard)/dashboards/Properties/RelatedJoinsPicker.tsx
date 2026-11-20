@@ -97,7 +97,7 @@ export function RelatedJoinsPicker({
         type="info"
         showIcon
         style={{ marginTop: 8 }}
-        message={t('joins_need_model_title')}
+        title={t('joins_need_model_title')}
         description={
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span>{t('joins_need_model_body')}</span>

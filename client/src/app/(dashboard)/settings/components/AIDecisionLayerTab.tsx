@@ -226,14 +226,14 @@ export const AIDecisionLayerTab: React.FC<TabComponentProps> = ({ onSetAction })
         />
       </div>
 
-      {error ? <Alert type="error" message={error} style={{ marginBottom: 16 }} showIcon /> : null}
+      {error ? <Alert type="error" title={error} style={{ marginBottom: 16 }} showIcon /> : null}
 
       {status ? (
         <Alert
           style={{ marginBottom: 16 }}
           type={backend === 'off' ? 'info' : 'success'}
           showIcon
-          message={
+          title={
             backend === 'off'
               ? t('backend_off')
               : t('backend_on', { backend: backend === 'jev' ? 'Jev' : 'Laya', model: status.model || '' })
@@ -259,7 +259,7 @@ export const AIDecisionLayerTab: React.FC<TabComponentProps> = ({ onSetAction })
           style={{ marginBottom: 16 }}
           type="warning"
           showIcon
-          message={t('blocked_by_residency')}
+          title={t('blocked_by_residency')}
           description={
             <a href="/settings?tab=ai-residency">{t('open_residency')}</a>
           }

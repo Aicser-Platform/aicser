@@ -50,7 +50,7 @@ export function PermissionDeniedExplain({
     <Alert
       type="warning"
       showIcon
-      message={t('title')}
+      title={t('title')}
       description={
         <Space orientation="vertical" size={8} style={{ width: '100%' }}>
           <Typography.Text>{t('description')}</Typography.Text>

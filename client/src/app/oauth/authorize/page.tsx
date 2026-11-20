@@ -56,7 +56,7 @@ export default function OAuthConsentPage() {
 
   return (
     <main style={{ maxWidth: 460, margin: '12vh auto', padding: '0 16px' }}>
-      {error ? <Alert type="error" showIcon message={error} /> : !info ? <Spin style={{ display: 'block', margin: '0 auto' }} /> : (
+      {error ? <Alert type="error" showIcon title={error} /> : !info ? <Spin style={{ display: 'block', margin: '0 auto' }} /> : (
         <Card>
           <Typography.Title level={3} style={{ marginTop: 0 }}>{t('title', { name: info.client_name })}</Typography.Title>
           <Typography.Paragraph>{t('body')}</Typography.Paragraph>

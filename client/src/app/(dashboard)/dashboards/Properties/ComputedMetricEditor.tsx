@@ -247,7 +247,7 @@ export function ComputedMetricEditor({ open, initial, columnOptions, dataSourceI
         </Button>,
       ].filter(Boolean)}
     >
-      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+      <Space orientation="vertical" style={{ width: '100%' }} size={12}>
         {isEnterpriseEdition() ? (
           <div>
             <Text style={{ fontSize: 11, fontWeight: 600 }}>{t('describe')}</Text>

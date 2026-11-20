@@ -176,7 +176,7 @@ const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
             {!lockedType && (
                 <>
                     <Alert
-                        message={t('enterprise_data_connectors')}
+                        title={t('enterprise_data_connectors')}
                         description={t('enterprise_data_connectors_desc')}
                         type="info"
                         showIcon
@@ -254,7 +254,7 @@ const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
 
                 {selectedConnector && (
                     <Alert
-                        message={`${selectedConnector.name} Configuration`}
+                        title={`${selectedConnector.name} Configuration`}
                         description={selectedConnector.description}
                         type="info"
                         showIcon
@@ -359,7 +359,7 @@ const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
 
                 {testResult && !testResult.success && (
                     <Alert
-                        message={t('connection_test_failed')}
+                        title={t('connection_test_failed')}
                         description={testResult.error}
                         type="error"
                         showIcon

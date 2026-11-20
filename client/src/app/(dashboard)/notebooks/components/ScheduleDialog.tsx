@@ -167,8 +167,8 @@ export function ScheduleDialog({
   return (
     <Modal open={open} onCancel={onClose} title={t('schedule_title')} width={620} footer={null} destroyOnHidden>
       {loading || !draft ? <Spin /> : (
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          {!enabledOnServer ? <Alert type="info" showIcon message={t('schedule_not_set_up')} /> : null}
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+          {!enabledOnServer ? <Alert type="info" showIcon title={t('schedule_not_set_up')} /> : null}
           <Text type="secondary">{t(explainKey)}</Text>
           {canEdit ? (
             <>
@@ -229,7 +229,7 @@ export function ScheduleDialog({
                     ? [<Button key="show" size="small" onClick={() => onShowRun(r.id)}>{t('schedule_show_results')}</Button>]
                     : [<ReloadOutlined key="spin" spin />]}
                 >
-                  <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
+                  <Space orientation="vertical" size={0} style={{ minWidth: 0 }}>
                     <Space size={6} wrap>
                       {statusTag(r)}
                       <Text>{when(r.finished_at || r.created_at)}</Text>

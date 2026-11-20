@@ -52,9 +52,9 @@ export function LakehouseComputeSourceNotice({
       showIcon
       icon={<ClusterOutlined />}
       style={{ marginBottom: 16 }}
-      message={empty ? t('empty_title') : t('info_title')}
+      title={empty ? t('empty_title') : t('info_title')}
       description={
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={8} style={{ width: '100%' }}>
           <span>{empty ? t('empty_desc') : t('info_desc')}</span>
           <Space wrap>
             <Button size="small" onClick={() => router.push('/pipelines')}>{t('open_pipelines')}</Button>

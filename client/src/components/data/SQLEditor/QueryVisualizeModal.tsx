@@ -430,7 +430,7 @@ export function QueryVisualizeModal({
                 style={{ marginTop: 8 }}
                 type="info"
                 showIcon
-                message="Run the query for preview and Snapshot mode."
+                title="Run the query for preview and Snapshot mode."
               />
             )}
           </div>

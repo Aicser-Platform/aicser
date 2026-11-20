@@ -89,7 +89,7 @@ export function ExtractTableModal({ open, libraryId, libraryName, onClose }: {
       }
     >
       <Text type="secondary">{t('extract_hint')}</Text>
-      <Space direction="vertical" size={8} style={{ width: '100%', marginTop: 12 }}>
+      <Space orientation="vertical" size={8} style={{ width: '100%', marginTop: 12 }}>
         {fields.map((f, i) => (
           <Space.Compact key={i} style={{ width: '100%' }}>
             <Input
@@ -125,7 +125,7 @@ export function ExtractTableModal({ open, libraryId, libraryName, onClose }: {
       </Space>
       {rows ? (
         <div style={{ marginTop: 16 }}>
-          {rows.some((r) => r._error) ? <Alert type="warning" showIcon message={t('extract_some_failed')} style={{ marginBottom: 8 }} /> : null}
+          {rows.some((r) => r._error) ? <Alert type="warning" showIcon title={t('extract_some_failed')} style={{ marginBottom: 8 }} /> : null}
           <Table
             size="small"
             rowKey={(r) => String(r.document_id ?? r.document)}

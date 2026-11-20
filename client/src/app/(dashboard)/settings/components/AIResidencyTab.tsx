@@ -119,7 +119,7 @@ export default function AIResidencyTab(_: TabComponentProps) {
     <Card size="small" loading={loading}>
       <Paragraph type="secondary">{t('desc')}</Paragraph>
       {deploymentDefault && (
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('deployment_default')} />
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t('deployment_default')} />
       )}
       <Form form={form} layout="vertical" style={{ maxWidth: 560 }} onValuesChange={preview}>
         <Form.Item name="allowed_providers" label={t('providers')} extra={t('providers_help')}>
@@ -144,7 +144,7 @@ export default function AIResidencyTab(_: TabComponentProps) {
               dataSource={configured}
               renderItem={(e) => (
                 <List.Item>
-                  <Space direction="vertical" size={0}>
+                  <Space orientation="vertical" size={0}>
                     <span>{e.example}</span>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {PROVIDER_LABELS[e.provider] || e.provider}
@@ -158,7 +158,7 @@ export default function AIResidencyTab(_: TabComponentProps) {
           </Form.Item>
         )}
         {blocksAll ? (
-          <Alert type="error" showIcon style={{ marginBottom: 12 }} message={t('blocks_all')} />
+          <Alert type="error" showIcon style={{ marginBottom: 12 }} title={t('blocks_all')} />
         ) : null}
         <Space>
           <Button type="primary" loading={saving} onClick={save} disabled={blocksAll}>

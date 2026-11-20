@@ -745,7 +745,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 type="error"
                 showIcon
                 style={{ marginTop: 6 }}
-                message={tDash('data_source_other_project_blocked')}
+                title={tDash('data_source_other_project_blocked')}
               />
             ) : null}
           </div>
@@ -921,7 +921,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               type="info"
               showIcon
               style={{ marginTop: 8 }}
-              message={tDash('bind_empty_widgets_title', { count: emptyOtherWidgets.length })}
+              title={tDash('bind_empty_widgets_title', { count: emptyOtherWidgets.length })}
               action={
                 <Button size="small" type="primary" loading={bindingEmpty} onClick={() => void bindEmptyWidgets()}>
                   {tDash('bind_empty_widgets_cta')}

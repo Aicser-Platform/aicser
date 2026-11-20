@@ -2520,7 +2520,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
 
         {uploadedFile && (
           <Alert
-            message={t('file_ready')}
+            title={t('file_ready')}
             description={
               <span style={{ fontSize: '13px' }}>
                 {t('file_ready_desc', {
@@ -2582,7 +2582,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message={t('header_row_warning')}
+          title={t('header_row_warning')}
           description={
             <Space orientation="vertical" style={{ width: '100%' }}>
               <Text style={{ fontSize: 13 }}>
@@ -2677,7 +2677,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       {/* Test result alert for file uploads */}
       {testResult && (
         <Alert
-          message={testResult.success ? t('file_ready_with_bang') : t('upload_failed_title')}
+          title={testResult.success ? t('file_ready_with_bang') : t('upload_failed_title')}
           description={<span style={{ fontSize: '13px' }}>{testResult.message || testResult.error}</span>}
           type={testResult.success ? 'success' : 'error'}
           showIcon
@@ -3452,7 +3452,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
-                message={t('alert_cloud_provider_title')}
+                title={t('alert_cloud_provider_title')}
                 description={
                   connectionPurpose === 'pipeline_lake'
                     ? t('desc_pipeline_lake_s3_interop')
@@ -3563,7 +3563,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               )}
               {connectionPurpose === 'pipeline_lake' && lakeAuthMode === 's3_interop' ? (
                 <>
-                  <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('desc_pipeline_lake_s3_interop')} />
+                  <Alert type="info" showIcon style={{ marginBottom: 16 }} title={t('desc_pipeline_lake_s3_interop')} />
                   <Row gutter={16}>
                     <Col span={12}>
                       <Form.Item label={t('label_storage_account_name')}>
@@ -3654,7 +3654,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               )}
               {connectionPurpose === 'pipeline_lake' && lakeAuthMode === 's3_interop' ? (
                 <>
-                  <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('desc_pipeline_lake_s3_interop')} />
+                  <Alert type="info" showIcon style={{ marginBottom: 16 }} title={t('desc_pipeline_lake_s3_interop')} />
                   <Row gutter={16}>
                     <Col span={12}>
                       <Form.Item label={t('label_access_key_id')} required help={t('gcp_hmac_help')}>
@@ -3701,7 +3701,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               ) : (
                 <>
                   <Alert
-                    message={t('alert_gcp_auth_title')}
+                    title={t('alert_gcp_auth_title')}
                     description={t('desc_gcp_service_account')}
                     type="info"
                     showIcon
@@ -3743,7 +3743,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           {(isDelta || isIceberg) && (
             <>
               <Alert
-                message={t('alert_cloud_provider_title')}
+                title={t('alert_cloud_provider_title')}
                 description={t('desc_cloud_provider_credentials')}
                 type="info"
                 showIcon
@@ -4122,7 +4122,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       <>
         {testResult && (
           <Alert
-            message={testResult.success ? t('connection_successful') : t('connection_failed')}
+            title={testResult.success ? t('connection_successful') : t('connection_failed')}
             description={testResult.message || testResult.error}
             type={testResult.success ? 'success' : 'error'}
             showIcon
@@ -4239,7 +4239,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         <Alert
           type="info"
           showIcon
-          message={t('kb_files_selected', { count: kbFiles.length })}
+          title={t('kb_files_selected', { count: kbFiles.length })}
           style={{ marginBottom: 16 }}
         />
       )}
@@ -4364,7 +4364,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         } else if (dataSourceConfig.type === 'warehouse') {
           const pipelineContextBanner =
             connectionPurpose === 'pipeline_lake' ? (
-              <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('pipeline_lake_banner')} />
+              <Alert type="info" showIcon style={{ marginBottom: 16 }} title={t('pipeline_lake_banner')} />
             ) : null;
           // Check if it's a data lake or cloud storage type (Delta/Iceberg/S3/Azure/GCP)
           if (
@@ -4391,7 +4391,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         } else {
           const pipelineExportBanner =
             connectionPurpose === 'pipeline_export' ? (
-              <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('pipeline_export_banner')} />
+              <Alert type="info" showIcon style={{ marginBottom: 16 }} title={t('pipeline_export_banner')} />
             ) : null;
           if (databaseTypes.find((db) => db.value === selectedDatabaseType)?.isEnterpriseConnector) {
             return (

@@ -660,7 +660,7 @@ export function RecipeEditor({
               <Alert
                 type="error"
                 showIcon
-                message={t('step_failed', { step: stepErrors[0].step + 1 })}
+                title={t('step_failed', { step: stepErrors[0].step + 1 })}
                 description={stepErrors[0].message}
                 style={{ marginBottom: 8 }}
               />
@@ -777,7 +777,7 @@ export function RecipeEditor({
                 {
                   title: t('detected_as'),
                   render: (_, r) => (
-                    <Space direction="vertical" size={0}>
+                    <Space orientation="vertical" size={0}>
                       <Text>{t(`type_${r[1].type}`)}</Text>
                       {r[1].formats?.length ? (
                         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -814,10 +814,10 @@ export function RecipeEditor({
         open={Boolean(failures)}
         onClose={() => setFailures(null)}
         title={failures ? t('failures_title', { column: failures.column }) : ''}
-        width={420}
+        size={420}
       >
         {failures && steps[failures.step] ? (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Text type="secondary">{t('failures_hint', { step: stepSentence(steps[failures.step], tt) })}</Text>
             <List
               loading={failureList.isLoading}

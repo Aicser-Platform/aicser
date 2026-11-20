@@ -127,10 +127,10 @@ export default function IdentityTab(_: TabComponentProps) {
       : t('sso_unknown');
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={16} style={{ width: '100%' }}>
       <Card size="small" title={t('sso_title')}>
         {sso ? (
-          <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={6} style={{ width: '100%' }}>
             <Text>
               {t('sso_provider')}: <Text strong>{signInLabel}</Text>
             </Text>
@@ -152,7 +152,7 @@ export default function IdentityTab(_: TabComponentProps) {
       </Card>
 
       <Card size="small" title={<>{t('connect_title')}<InfoHint text={t('connect_desc')} /></>}>
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <Text>
             {t('base_url')}{' '}
             {/* The app's own public address: it forwards /api/* to the server. The build-time
@@ -246,7 +246,7 @@ export default function IdentityTab(_: TabComponentProps) {
         onCancel={() => setCreatedToken(null)}
         footer={<Button type="primary" onClick={() => setCreatedToken(null)}>{t('done')}</Button>}
       >
-        <Alert type="warning" showIcon message={t('token_once')} style={{ marginBottom: 12 }} />
+        <Alert type="warning" showIcon title={t('token_once')} style={{ marginBottom: 12 }} />
         <Text code copyable style={{ wordBreak: 'break-all' }}>
           {createdToken}
         </Text>

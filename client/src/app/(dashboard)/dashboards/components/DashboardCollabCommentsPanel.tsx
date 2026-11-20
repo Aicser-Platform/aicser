@@ -349,7 +349,7 @@ export function DashboardCollabCommentsPanel({
           ) : null}
         </div>
 
-        {error ? <Alert type="warning" showIcon message={t('collab_comments_load_failed')} /> : null}
+        {error ? <Alert type="warning" showIcon title={t('collab_comments_load_failed')} /> : null}
 
         <div className="dashboard-comments-list">
           {loading && threads.length === 0 ? (

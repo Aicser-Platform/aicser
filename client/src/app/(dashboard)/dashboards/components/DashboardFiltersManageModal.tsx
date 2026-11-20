@@ -157,7 +157,7 @@ function FilterEditorForm({
 
   return (
     <Space orientation="vertical" style={{ width: '100%' }} size={12}>
-      <Alert type="info" showIcon message={t('filter_manage_help_title')} description={t('filter_manage_help_body')} />
+      <Alert type="info" showIcon title={t('filter_manage_help_title')} description={t('filter_manage_help_body')} />
       {filters.map((f, idx) => {
         const needsDataSource = ['dropdown', 'checkbox', 'slider'].includes(f.type);
         const usageCount = f.field ? countWidgetsUsingField(widgets, f.field) : 0;

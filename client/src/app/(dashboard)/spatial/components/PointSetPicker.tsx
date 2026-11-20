@@ -56,7 +56,7 @@ export function PointSetPicker({
   const found = Boolean(value.lat && value.lon);
 
   return (
-    <Space direction="vertical" size={10} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={10} style={{ width: '100%' }}>
       <Form.Item label={t('source')} style={{ marginBottom: 0 }}>
         <Select
           showSearch

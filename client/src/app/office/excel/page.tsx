@@ -122,9 +122,9 @@ export default function ExcelTaskpane() {
         onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); if (question.trim() && sourceId) void ask(); } }}
       />
       <Button type="primary" loading={busy} disabled={!question.trim() || !sourceId} onClick={ask}>{t('ask')}</Button>
-      {error ? <Alert type="error" showIcon message={error} /> : null}
+      {error ? <Alert type="error" showIcon title={error} /> : null}
       {answer ? (
-        <Space direction="vertical" size={8}>
+        <Space orientation="vertical" size={8}>
           {answer.answer ? <Typography.Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{answer.answer}</Typography.Paragraph> : null}
           {answer.columns.length ? (
             <Button onClick={() => void insert()} disabled={!ready}>

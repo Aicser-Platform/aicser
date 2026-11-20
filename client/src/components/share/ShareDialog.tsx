@@ -164,7 +164,7 @@ export function ShareDialog({
             <Alert
               type="info"
               showIcon
-              message={link.review?.approvers?.length
+              title={link.review?.approvers?.length
                 ? t('pending_with', { names: link.review.approvers.join(', ') })
                 : t('pending')}
               action={link.review?.can_approve ? (

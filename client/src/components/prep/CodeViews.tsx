@@ -32,10 +32,10 @@ export function YamlView({ steps, readOnly, onApply }: { steps: PrepStep[]; read
   };
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Space orientation="vertical" style={{ width: '100%' }}>
       <Text type="secondary">{t('yaml_hint')}</Text>
       <Input.TextArea value={text} onChange={(e) => setText(e.target.value)} rows={22} className="recipe-editor__code" spellCheck={false} readOnly={readOnly} aria-label={t('view_yaml')} />
-      {error ? <Alert type="error" showIcon message={error} /> : null}
+      {error ? <Alert type="error" showIcon title={error} /> : null}
       {!readOnly ? (
         <Button type="primary" onClick={apply}>
           {t('apply')}
@@ -60,7 +60,7 @@ export function SqlView({ sql, readOnly, onAddSqlStep }: { sql: string | null; r
   };
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+    <Space orientation="vertical" style={{ width: '100%' }} size={12}>
       <Space>
         <Text type="secondary">{t('sql_hint')}</Text>
         <Button size="small" onClick={() => void copy()} disabled={!sql}>

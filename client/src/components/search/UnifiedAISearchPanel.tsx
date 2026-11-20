@@ -219,7 +219,7 @@ export const UnifiedAISearchPanel: React.FC<UnifiedAISearchPanelProps> = ({
           <Text type="secondary">{t('subtitle')}</Text>
         </div>
 
-        <Alert type="info" showIcon message={t('hint')} />
+        <Alert type="info" showIcon title={t('hint')} />
 
         <Card size="small">
           <Space.Compact style={{ width: '100%' }}>

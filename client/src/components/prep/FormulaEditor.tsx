@@ -57,7 +57,7 @@ export function FormulaEditor({
   const columnToken = (c: string) => (language === 'excel' ? `[${c}]` : `"${c.replace(/"/g, '""')}"`);
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={8} style={{ width: '100%' }}>
       <Segmented
         size="small"
         value={language}
@@ -76,7 +76,7 @@ export function FormulaEditor({
         spellCheck={false}
         aria-label={t('formula')}
       />
-      {error && value.trim() ? <Alert type="error" showIcon message={error} /> : null}
+      {error && value.trim() ? <Alert type="error" showIcon title={error} /> : null}
       <div>
         <Text type="secondary" style={{ fontSize: 12 }}>
           {t('formula_columns')}

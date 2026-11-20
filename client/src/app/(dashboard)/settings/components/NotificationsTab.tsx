@@ -72,7 +72,7 @@ export const NotificationsTab: React.FC<TabComponentProps> = ({ onSetAction }) =
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message={t('notifications_outbound_hint_title')}
+          title={t('notifications_outbound_hint_title')}
           action={
             <Button
               size="small"

@@ -105,7 +105,7 @@ export function NotebookGovernanceDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      width={520}
+      size={520}
       title={t('governance_title')}
       extra={canEdit ? <Button type="primary" loading={saving} onClick={() => void save()}>{t('save')}</Button> : null}
     >
@@ -115,7 +115,7 @@ export function NotebookGovernanceDrawer({
             key: 'params',
             label: t('governance_params'),
             children: (
-              <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              <Space orientation="vertical" style={{ width: '100%' }} size="middle">
                 <Text type="secondary">{t('governance_params_help')}</Text>
                 <Form layout="vertical" disabled={!canEdit}>
                   {local.parameters.map((p, i) => (
@@ -175,7 +175,7 @@ export function NotebookGovernanceDrawer({
             key: 'compute',
             label: t('governance_compute'),
             children: (
-              <Space direction="vertical">
+              <Space orientation="vertical">
                 <Text type="secondary">{t('governance_compute_help')}</Text>
                 <Select
                   disabled={!canEdit}
@@ -194,7 +194,7 @@ export function NotebookGovernanceDrawer({
             key: 'git',
             label: t('governance_git'),
             children: (
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space orientation="vertical" style={{ width: '100%' }}>
                 <Text type="secondary">{t('governance_git_help')}</Text>
                 <Input
                   disabled={!canEdit}
@@ -222,13 +222,13 @@ export function NotebookGovernanceDrawer({
             key: 'cert',
             label: t('governance_cert'),
             children: (
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space orientation="vertical" style={{ width: '100%' }}>
                 <Tag icon={<SafetyCertificateOutlined />} color={cert.status === 'approved' ? 'success' : cert.status === 'in_review' ? 'processing' : 'default'}>
                   {t(`governance_cert_${cert.status}`)}
                 </Tag>
-                {cert.note ? <Alert type="info" message={cert.note} /> : null}
+                {cert.note ? <Alert type="info" title={cert.note} /> : null}
                 {canEdit ? (
-                  <Space direction="vertical" style={{ width: '100%' }}>
+                  <Space orientation="vertical" style={{ width: '100%' }}>
                     {cert.status === 'in_review' && isSubmitter ? (
                       <Text type="secondary">{t('governance_cert_review_hint')}</Text>
                     ) : null}
@@ -258,7 +258,7 @@ export function NotebookGovernanceDrawer({
             key: 'security',
             label: t('governance_security'),
             children: (
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space orientation="vertical" style={{ width: '100%' }}>
                 <Text type="secondary">{t('governance_security_help')}</Text>
                 <Button onClick={() => void runLint()}>{t('governance_run_lint')}</Button>
                 {lint.length ? (
@@ -271,7 +271,7 @@ export function NotebookGovernanceDrawer({
             key: 'audit',
             label: t('governance_audit'),
             children: (
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space orientation="vertical" style={{ width: '100%' }}>
                 <Button
                   icon={<DownloadOutlined />}
                   href={`${apiBase}/${encodeURIComponent(documentId)}/audit/export`}

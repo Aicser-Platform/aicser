@@ -172,7 +172,7 @@ export const PreviewPanel: React.FC<{
       </div>
 
       {preview.masked ? (
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('preview_masked')} />
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t('preview_masked')} />
       ) : null}
 
       {!hasPreviewContext ? (
@@ -190,7 +190,7 @@ export const PreviewPanel: React.FC<{
                   key={path}
                   type="warning"
                   showIcon
-                  message={t('preview_unresolved', { path })}
+                  title={t('preview_unresolved', { path })}
                 />
               ))}
             </Space>

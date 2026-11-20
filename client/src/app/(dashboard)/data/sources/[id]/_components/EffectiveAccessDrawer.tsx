@@ -220,7 +220,7 @@ export const EffectiveAccessDrawer: React.FC<{
         {effect.kind === 'filtered' ? (
           <div>
             {!canSimulate ? (
-              <Alert type="warning" showIcon message={t('effective_access_role_grantee_warning')} />
+              <Alert type="warning" showIcon title={t('effective_access_role_grantee_warning')} />
             ) : (
               <Collapse
                 size="small"
@@ -244,14 +244,14 @@ export const EffectiveAccessDrawer: React.FC<{
                       ) : (
                         <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                           {preview.masked ? (
-                            <Alert type="info" showIcon message={t('preview_masked')} />
+                            <Alert type="info" showIcon title={t('preview_masked')} />
                           ) : null}
                           {preview.unresolved.map((path) => (
                             <Alert
                               key={path}
                               type="warning"
                               showIcon
-                              message={t('preview_unresolved', { path })}
+                              title={t('preview_unresolved', { path })}
                             />
                           ))}
                           {preview.effect ? (

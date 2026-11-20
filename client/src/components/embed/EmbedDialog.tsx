@@ -197,7 +197,7 @@ export function EmbedDialog({
         <Alert
           type={error.upgrade ? 'warning' : 'error'}
           showIcon
-          message={error.text}
+          title={error.text}
           style={{ marginBottom: 12 }}
           action={
             error.upgrade ? (

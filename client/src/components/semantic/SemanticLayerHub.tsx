@@ -228,7 +228,7 @@ export function SemanticLayerHub() {
       dataIndex: 'name',
       key: 'name',
       render: (name: string, row) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Text strong>{name}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {kindLabel(row)}
@@ -271,7 +271,7 @@ export function SemanticLayerHub() {
           singleTableSource: isSingleTableFileSource(row.type, undefined),
         });
         return (
-          <Space direction="vertical" size={4}>
+          <Space orientation="vertical" size={4}>
             <Tag color={SEMANTIC_READINESS_TAG_COLOR[readiness]}>{t(`readiness_${readiness}`)}</Tag>
             <Space size={[4, 4]} wrap>
               {metrics > 0 ? <Tag>{t('stat_metrics_short', { count: metrics })}</Tag> : null}

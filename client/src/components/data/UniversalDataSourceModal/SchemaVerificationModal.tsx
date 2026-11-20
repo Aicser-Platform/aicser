@@ -175,7 +175,7 @@ const SchemaVerificationModal: React.FC<SchemaVerificationModalProps> = ({
         return (
             <div>
                 <Alert
-                    message={t('schema_overview')}
+                    title={t('schema_overview')}
                     description={t('schema_overview_desc')}
                     type="info"
                     showIcon
@@ -274,7 +274,7 @@ const SchemaVerificationModal: React.FC<SchemaVerificationModalProps> = ({
         return (
             <div>
                 <Alert
-                    message={t('table_structure_verification')}
+                    title={t('table_structure_verification')}
                     description={t('table_structure_verification_desc')}
                     type="info"
                     showIcon
@@ -364,7 +364,7 @@ const SchemaVerificationModal: React.FC<SchemaVerificationModalProps> = ({
         return (
             <div>
                 <Alert
-                    message={t('verification_checklist')}
+                    title={t('verification_checklist')}
                     description={t('verification_checklist_desc')}
                     type="info"
                     showIcon
@@ -436,7 +436,7 @@ const SchemaVerificationModal: React.FC<SchemaVerificationModalProps> = ({
         return (
             <div>
                 <Alert
-                    message={t('schema_improvement_suggestions')}
+                    title={t('schema_improvement_suggestions')}
                     description={t('schema_improvement_suggestions_desc')}
                     type="info"
                     showIcon
@@ -446,7 +446,7 @@ const SchemaVerificationModal: React.FC<SchemaVerificationModalProps> = ({
                 {suggestions.map((suggestion, index) => (
                     <Alert
                         key={index}
-                        message={suggestion.message}
+                        title={suggestion.message}
                         description={suggestion.suggestion}
                         type={suggestion.type === 'warning' ? 'warning' : 'info'}
                         showIcon

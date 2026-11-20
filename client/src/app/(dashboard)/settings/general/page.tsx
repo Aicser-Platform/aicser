@@ -17,7 +17,7 @@ export default function GeneralSettingsRedirect() {
   }, [router]);
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-      <Spin tip={t('loading')} />
+      <Spin description={t('loading')} />
     </div>
   );
 }

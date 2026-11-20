@@ -339,7 +339,7 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
     const renderYamlEditor = () => (
         <div style={{ padding: '20px' }}>
             <Alert
-                message={t('cube_schema_title')}
+                title={t('cube_schema_title')}
                 description={t('cube_schema_desc')}
                 type="info"
                 showIcon
@@ -422,7 +422,7 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
         return (
             <Card>
                 <Alert
-                    message={t('modeling_failed')}
+                    title={t('modeling_failed')}
                     description={t('modeling_failed_desc')}
                     type="error"
                     showIcon

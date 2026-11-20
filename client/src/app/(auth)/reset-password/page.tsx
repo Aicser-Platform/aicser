@@ -112,7 +112,7 @@ export default function ResetPasswordPage() {
               <Alert
                 type="success"
                 showIcon
-                message={message}
+                title={message}
                 className="login-error-alert"
                 action={
                   <Button size="small" type="link" onClick={() => router.push('/login')}>
@@ -121,7 +121,7 @@ export default function ResetPasswordPage() {
                 }
               />
             ) : null}
-            {error ? <Alert type="error" showIcon message={error} className="login-error-alert" /> : null}
+            {error ? <Alert type="error" showIcon title={error} className="login-error-alert" /> : null}
 
             <Form name="reset-password" onFinish={onFinish} layout="vertical" size="large" requiredMark>
               {mode === 'code' && !isSupabaseRecovery ? (

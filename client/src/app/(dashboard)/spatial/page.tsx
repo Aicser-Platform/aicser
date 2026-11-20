@@ -318,16 +318,16 @@ export default function SpatialPage() {
         </Col>
 
         <Col xs={24} lg={15} xl={16}>
-          {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
+          {error ? <Alert type="error" showIcon title={error} style={{ marginBottom: 12 }} /> : null}
           {!result ? (
             <Card size="small" className="spatial-empty">
               <BasemapMap ariaLabel={t('map_label')} failedText={t('map_failed')} dark={isDarkMode} height={420} />
               <Paragraph type="secondary" style={{ margin: '12px 4px 0' }}>{t('empty_hint')}</Paragraph>
             </Card>
           ) : (
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={12} style={{ width: '100%' }}>
               <Card size="small">
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                   <Text className="spatial-headline">{headline}</Text>
                   <Row gutter={[16, 8]}>
                     {stats.map((s) => (

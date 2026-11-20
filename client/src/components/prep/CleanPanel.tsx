@@ -149,7 +149,7 @@ export function CleanPanel({
               <List.Item
                 actions={!readOnly ? [<Button key="apply" size="small" onClick={() => onApply(f.suggested_step as PrepStep)}>{tp('apply')}</Button>] : []}
               >
-                <Space direction="vertical" size={2}>
+                <Space orientation="vertical" size={2}>
                   <Text>{findingText(f)}</Text>
                   {Array.isArray(f.params.failing) && (f.params.failing as string[]).length ? (
                     <Text type="secondary" className="clean-panel__small">

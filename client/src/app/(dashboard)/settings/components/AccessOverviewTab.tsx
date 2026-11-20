@@ -33,14 +33,14 @@ export function AccessOverviewTab() {
   });
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={16} style={{ width: '100%' }}>
       <Space size={32} wrap>
         <Statistic title={t('total_sources')} value={data?.totals.sources ?? 0} />
         <Statistic title={t('total_row_rules')} value={data?.totals.row_rules ?? 0} />
         <Statistic title={t('total_masked')} value={data?.totals.masked_columns ?? 0} />
-        <Statistic title={t('total_unprotected')} value={data?.totals.unprotected ?? 0} valueStyle={data?.totals.unprotected ? { color: 'var(--ant-color-warning)' } : undefined} />
+        <Statistic title={t('total_unprotected')} value={data?.totals.unprotected ?? 0} styles={data?.totals.unprotected ? { content: { color: 'var(--ant-color-warning)' } } : undefined} />
       </Space>
-      {data?.totals.unprotected ? <Alert type="warning" showIcon message={t('unprotected_alert', { count: data.totals.unprotected })} /> : null}
+      {data?.totals.unprotected ? <Alert type="warning" showIcon title={t('unprotected_alert', { count: data.totals.unprotected })} /> : null}
       <Table<Row>
         rowKey="id"
         loading={isLoading}
@@ -52,7 +52,7 @@ export function AccessOverviewTab() {
             title: t('col_connection'),
             dataIndex: 'name',
             render: (name: string, r) => (
-              <Space direction="vertical" size={0}>
+              <Space orientation="vertical" size={0}>
                 <Text strong>{name}</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>{r.kind}</Text>
               </Space>

@@ -102,13 +102,13 @@ export default function TryPage() {
     <main style={{ maxWidth: 420, margin: '8vh auto', padding: '0 16px' }}>
       <Typography.Title level={2}>{t('try_title')}</Typography.Title>
       {!config?.enabled ? (
-        <Alert type="info" showIcon message={t('unavailable')} />
+        <Alert type="info" showIcon title={t('unavailable')} />
       ) : codeFor ? (
         <Form layout="vertical" onFinish={verify} requiredMark={false}>
           <Form.Item name="code" label={t('code_label', { email: codeFor.email })} rules={[{ required: true, pattern: /^\d{6}$/, message: t('code_rule') }]}>
             <Input inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus />
           </Form.Item>
-          {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
+          {error && <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} />}
           <Button type="primary" htmlType="submit" block loading={busy}>{t('verify')}</Button>
         </Form>
       ) : (
@@ -126,7 +126,7 @@ export default function TryPage() {
             <Checkbox checked={accepted} onChange={(e) => setAccepted(e.target.checked)}>{t('terms')}</Checkbox>
           </Form.Item>
           <div ref={humanBox} />
-          {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
+          {error && <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} />}
           <Button type="primary" block disabled={!ready} loading={busy} onClick={() => start(true)}>{t('start_with_email')}</Button>
           <Divider plain>{t('or')}</Divider>
           <Button block disabled={!ready} loading={busy} onClick={() => start(false)}>{t('start_as_guest', { days: config.guest_days })}</Button>

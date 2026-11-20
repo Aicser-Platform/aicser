@@ -33,5 +33,5 @@ export function GuidedStep({ n, title, hint, children }: { n: number; title: Rea
 
 /** What will happen, in one sentence; a warning when something needed is still missing. */
 export function GuidedSummary({ children, missing }: { children: React.ReactNode; missing?: React.ReactNode }) {
-  return <Alert className="guided-form__summary" type={missing ? 'warning' : 'info'} showIcon message={missing || children} />;
+  return <Alert className="guided-form__summary" type={missing ? 'warning' : 'info'} showIcon title={missing || children} />;
 }

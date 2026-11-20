@@ -93,7 +93,7 @@ export function ScheduleWhen({
   );
 
   return (
-    <Space direction="vertical" size={4}>
+    <Space orientation="vertical" size={4}>
       <Space wrap>
         {frequency === 'once' ? (
           <DatePicker

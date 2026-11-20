@@ -21,7 +21,7 @@ export const BypassBanner: React.FC<{ grants: DataSourceAccessGrant[]; onOpenAcc
       type="warning"
       showIcon
       style={{ marginBottom: 16 }}
-      message={t(onOpenAccess ? 'bypass_banner' : 'bypass_banner_here', { count })}
+      title={t(onOpenAccess ? 'bypass_banner' : 'bypass_banner_here', { count })}
       action={onOpenAccess ? <Button size="small" onClick={onOpenAccess}>{t('tab_access')}</Button> : undefined}
     />
   );

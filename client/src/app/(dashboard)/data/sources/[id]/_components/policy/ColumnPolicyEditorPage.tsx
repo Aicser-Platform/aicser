@@ -189,7 +189,7 @@ const ColumnRuleCard: React.FC<{
         </Col>
       </Row>
       {action === 'deny' ? (
-        <Alert type="warning" showIcon style={{ marginTop: 12 }} message={t('column_rule_deny_hint')} />
+        <Alert type="warning" showIcon style={{ marginTop: 12 }} title={t('column_rule_deny_hint')} />
       ) : null}
     </Card>
   );

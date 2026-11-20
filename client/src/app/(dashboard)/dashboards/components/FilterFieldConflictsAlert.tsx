@@ -32,7 +32,7 @@ export function FilterFieldConflictsAlert({ conflicts, compact = false }: Props)
       type="warning"
       showIcon
       className={compact ? 'filter-conflicts-alert-compact' : 'filter-conflicts-alert'}
-      message={t('filter_conflict_title')}
+      title={t('filter_conflict_title')}
       description={description}
       style={{ marginBottom: compact ? 8 : 12 }}
     />

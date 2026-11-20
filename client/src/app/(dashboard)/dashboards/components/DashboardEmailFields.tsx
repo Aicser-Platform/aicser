@@ -150,7 +150,7 @@ export function DashboardEmailFields({
           key: 'message',
           label: t('email_customise'),
           children: (
-            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
               <Input value={form.subject} onChange={(e) => patch({ subject: e.target.value })} maxLength={255}
                 addonBefore={t('schedule_subject')} placeholder={t('schedule_subject_placeholder')} />
               <Input.TextArea value={form.body} onChange={(e) => patch({ body: e.target.value })}

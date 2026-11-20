@@ -76,7 +76,7 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
   };
 
   return (
-    <Drawer title={t('title')} width={420} open={open} onClose={onClose}>
+    <Drawer title={t('title')} size={420} open={open} onClose={onClose}>
       <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>{t('snapshot_hint')}</Text>
       <Space.Compact style={{ width: '100%', marginBottom: 16 }}>
         <Input
@@ -90,7 +90,7 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
         />
         <Button type="primary" onClick={handleSave} loading={isSaving}>{t('snapshot_save')}</Button>
       </Space.Compact>
-      {versionsError ? <Alert type="error" showIcon message={versionsError} style={{ marginBottom: 12 }} /> : null}
+      {versionsError ? <Alert type="error" showIcon title={versionsError} style={{ marginBottom: 12 }} /> : null}
       <HistoryList
         loading={isLoadingVersions && versions.length === 0}
         restoreLabel={t('restore')}

@@ -45,7 +45,7 @@ export function ConditionBuilder({
   const set = (i: number, patch: Partial<Condition>) => onChange(value.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={8}>
+    <Space orientation="vertical" style={{ width: '100%' }} size={8}>
       {value.length > 1 ? (
         <Segmented
           size="small"

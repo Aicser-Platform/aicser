@@ -63,7 +63,7 @@ export function SeeAsMemberDrawer({ dataSourceId, organizationId }: { dataSource
     <>
       <Button icon={<EyeOutlined />} onClick={() => setOpen(true)}>{t('see_as_button')}</Button>
       <Drawer open={open} onClose={() => setOpen(false)} title={t('see_as_title')} size={640}>
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           <Text type="secondary">{t('see_as_intro')}</Text>
           <Space wrap>
             <Select
@@ -86,7 +86,7 @@ export function SeeAsMemberDrawer({ dataSourceId, organizationId }: { dataSource
             />
             <Button type="primary" disabled={!member} loading={loading} onClick={() => void run()}>{t('see_as_run')}</Button>
           </Space>
-          {error ? <Alert type="error" showIcon message={error} /> : null}
+          {error ? <Alert type="error" showIcon title={error} /> : null}
           {result ? (
             <>
               <section>
@@ -100,7 +100,7 @@ export function SeeAsMemberDrawer({ dataSourceId, organizationId }: { dataSource
                     {result.access.unrestricted ? (
                       <div><Tag color="warning">{t('see_as_all_rows')}</Tag></div>
                     ) : (
-                      <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                      <Space orientation="vertical" size={4} style={{ width: '100%' }}>
                         {result.access.policies.map((p) => (
                           <div key={p.id}>
                             <Text>{p.name}</Text>
@@ -130,7 +130,7 @@ export function SeeAsMemberDrawer({ dataSourceId, organizationId }: { dataSource
                 <section>
                   <Text strong>{t('see_as_sample', { table: result.sample.table })}</Text>
                   {result.sample.error ? (
-                    <Alert type="info" showIcon message={result.sample.error} />
+                    <Alert type="info" showIcon title={result.sample.error} />
                   ) : result.sample.rows?.length ? (
                     <Table
                       size="small"

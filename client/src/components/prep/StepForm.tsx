@@ -459,7 +459,7 @@ export function StepForm({
   }, [JSON.stringify(step), formulaOk]);
 
   const multi = (field: string, label: string, min = 1) => (
-    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={2} style={{ width: '100%' }}>
       <Text strong>{label}</Text>
       <Select
         mode="multiple"
@@ -473,13 +473,13 @@ export function StepForm({
     </Space>
   );
   const single = (field: string, label: string) => (
-    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={2} style={{ width: '100%' }}>
       <Text strong>{label}</Text>
       <Select showSearch value={v[field]} onChange={(val) => set({ [field]: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ width: '100%' }} aria-label={label} />
     </Space>
   );
   const text = (field: string, label: string, placeholder?: string, extra?: string) => (
-    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={2} style={{ width: '100%' }}>
       <Text strong>{label}</Text>
       <Input value={v[field]} placeholder={placeholder} onChange={(e) => set({ [field]: e.target.value })} aria-label={label} />
       {extra ? <Text type="secondary" style={{ fontSize: 12 }}>{extra}</Text> : null}
@@ -499,7 +499,7 @@ export function StepForm({
       case 'rename_all': {
         const mapping = v.mapping ?? renameAllMapping(columns, v.convention);
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {v.mapping ? null : (
               <Radio.Group value={v.convention} onChange={(e) => set({ convention: e.target.value })}>
                 {(['snake', 'title', 'camel', 'lower', 'upper'] as Convention[]).map((c) => (
@@ -507,7 +507,7 @@ export function StepForm({
                 ))}
               </Radio.Group>
             )}
-            {mapping === null ? <Alert type="warning" showIcon message={t('rename_collision')} /> : null}
+            {mapping === null ? <Alert type="warning" showIcon title={t('rename_collision')} /> : null}
             <Table
               size="small"
               pagination={false}
@@ -531,9 +531,9 @@ export function StepForm({
       }
       case 'type_date':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_columns'))}
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
               <Text strong>{t('field_date_formats')}</Text>
               <Select
                 mode="tags"
@@ -551,14 +551,14 @@ export function StepForm({
               <Button onClick={() => void addFromExample()} disabled={!v.example?.trim()}>{t('date_example_add')}</Button>
             </Space.Compact>
             {v.exampleMiss ? <Text type="warning">{t('date_example_miss')}</Text> : null}
-            {detected?.ambiguous ? <Alert type="info" showIcon message={t('date_ambiguous')} /> : null}
+            {detected?.ambiguous ? <Alert type="info" showIcon title={t('date_ambiguous')} /> : null}
             <Checkbox checked={v.withTime} onChange={(e) => set({ withTime: e.target.checked })}>{t('date_with_time')}</Checkbox>
             <Checkbox checked={v.excel} onChange={(e) => set({ excel: e.target.checked })}>{t('date_excel_serial')}</Checkbox>
           </Space>
         );
       case 'type_number':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_columns'))}
             <Radio.Group value={v.type} onChange={(e) => set({ type: e.target.value })}>
               <Radio value="number">{t('type_number')}</Radio>
@@ -574,7 +574,7 @@ export function StepForm({
         );
       case 'replace':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_columns'))}
             <Radio.Group value={v.match} onChange={(e) => set({ match: e.target.value })}>
               <Radio.Button value="contains">{t('match_contains')}</Radio.Button>
@@ -595,7 +595,7 @@ export function StepForm({
         );
       case 'fill':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_columns'))}
             <Radio.Group value={v.strategy} onChange={(e) => set({ strategy: e.target.value })}>
               {['value', 'down', 'up', 'mean', 'median', 'mode'].map((s) => (
@@ -607,7 +607,7 @@ export function StepForm({
         );
       case 'split':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {single('column', t('field_column'))}
             <Radio.Group value={v.mode} onChange={(e) => set({ mode: e.target.value })}>
               <Radio.Button value="whitespace">{t('split_whitespace')}</Radio.Button>
@@ -642,7 +642,7 @@ export function StepForm({
         );
       case 'extract':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {single('column', t('field_column'))}
             <Space wrap>
               {EXTRACT_PRESETS.map((p) => (
@@ -657,7 +657,7 @@ export function StepForm({
         );
       case 'mask':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_columns'))}
             <Radio.Group value={v.method} onChange={(e) => set({ method: e.target.value })}>
               {(['hash', 'last4', 'redact'] as const).map((m) => (
@@ -668,7 +668,7 @@ export function StepForm({
         );
       case 'change_case':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_columns'))}
             <Radio.Group value={v.case} onChange={(e) => set({ case: e.target.value })}>
               <Radio.Button value="upper">UPPER</Radio.Button>
@@ -680,7 +680,7 @@ export function StepForm({
         );
       case 'filter_rows':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Radio.Group value={v.action} onChange={(e) => set({ action: e.target.value })}>
               <Radio.Button value="keep">{t('filter_keep')}</Radio.Button>
               <Radio.Button value="remove">{t('filter_remove')}</Radio.Button>
@@ -690,7 +690,7 @@ export function StepForm({
         );
       case 'conditional':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {text('into', t('field_new_column'), 'category', columns.includes(v.into) ? t('replaces_column') : undefined)}
             {(v.rules as { conditions: Condition[]; match: 'all' | 'any'; then: { value?: string; column?: string } }[]).map((rule, i) => (
               <div key={i} className="recipe-editor__rule">
@@ -720,14 +720,14 @@ export function StepForm({
         );
       case 'formula':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {text('into', t('field_new_column'), 'new_column', columns.includes(v.into) ? t('replaces_column') : undefined)}
             <FormulaEditor value={v.expression} language={v.language} onChange={(e) => set({ expression: e })} onLanguageChange={(l) => set({ language: l })} columns={columns} onValidity={setFormulaOk} />
           </Space>
         );
       case 'concat':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_columns_in_order'), 2)}
             {text('separator', t('field_separator'), ' ')}
             {text('into', t('field_new_column'))}
@@ -735,7 +735,7 @@ export function StepForm({
         );
       case 'sql':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Input.TextArea
               value={v.query}
               autoSize={{ minRows: 6, maxRows: 18 }}
@@ -749,21 +749,21 @@ export function StepForm({
         );
       case 'flatten_json':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {single('column', t('field_column'))}
             {text('fields', t('field_json_fields'), 'city, address.country', t('flatten_hint'))}
           </Space>
         );
       case 'dedupe':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_dedupe_columns'), 0)}
             <Text type="secondary" style={{ fontSize: 12 }}>{t('dedupe_hint')}</Text>
           </Space>
         );
       case 'group':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('by', t('field_group_by'), 0)}
             {(['sum', 'count', 'avg', 'min', 'max'] as const).map((m) => (
               <React.Fragment key={m}>{multi(m, t(`agg_${m}`), 0)}</React.Fragment>
@@ -772,7 +772,7 @@ export function StepForm({
         );
       case 'checks':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('notNull', t('check_not_null'), 0)}
             {multi('unique', t('check_unique'), 0)}
             <Space wrap>
@@ -793,7 +793,7 @@ export function StepForm({
         );
       case 'pivot':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {single('on', t('field_pivot_on'))}
             {single('using', t('field_pivot_values'))}
             <Radio.Group value={v.agg} onChange={(e) => set({ agg: e.target.value })}>
@@ -806,8 +806,8 @@ export function StepForm({
         );
       case 'merge':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
               <Text strong>{t('field_other_table')}</Text>
               <Select showSearch value={v.asset} onChange={(val) => set({ asset: val })} options={tables.map((x) => ({ value: x, label: x }))} style={{ width: '100%' }} aria-label={t('field_other_table')} />
             </Space>
@@ -831,7 +831,7 @@ export function StepForm({
               <Radio value="similar">{t('merge_similar')}</Radio>
             </Radio.Group>
             {v.match === 'similar' ? (
-              <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              <Space orientation="vertical" size={2} style={{ width: '100%' }}>
                 <Space>
                   <Text>{t('merge_similarity')}</Text>
                   <InputNumber min={0.5} max={1} step={0.05} value={v.threshold} onChange={(val) => set({ threshold: val ?? 0.9 })} aria-label={t('merge_similarity')} />
@@ -843,13 +843,13 @@ export function StepForm({
         );
       case 'window':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
               <Text strong>{t('field_calculation')}</Text>
               <Select value={v.calc} onChange={(val) => set({ calc: val })} options={WINDOW_CALCS.map((c) => ({ value: c, label: t(`calc_${c}`) }))} style={{ width: '100%' }} aria-label={t('field_calculation')} />
             </Space>
             {v.calc !== 'row_number' ? single('column', t('field_value_column')) : null}
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
               <Text strong>{t('field_order_by')}</Text>
               <Space.Compact style={{ width: '100%' }}>
                 <Select showSearch allowClear value={v.orderBy} onChange={(val) => set({ orderBy: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ width: '100%' }} aria-label={t('field_order_by')} status={NEEDS_ORDER.has(v.calc) && !v.orderBy ? 'warning' : undefined} />
@@ -868,7 +868,7 @@ export function StepForm({
         );
       case 'bin':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {single('column', t('field_number_column'))}
             <Radio.Group value={v.mode} onChange={(e) => set({ mode: e.target.value })}>
               <Radio.Button value="edges">{t('bin_edges')}</Radio.Button>
@@ -888,11 +888,11 @@ export function StepForm({
         );
       case 'index':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {text('into', t('field_new_column'))}
             <Space><Text>{t('field_start_at')}</Text><InputNumber value={v.start} onChange={(val) => set({ start: val ?? 1 })} aria-label={t('field_start_at')} /></Space>
             {multi('partitionBy', t('field_restart_per_group'), 0)}
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
               <Text strong>{t('field_order_by')}</Text>
               <Select showSearch allowClear value={v.orderBy} placeholder={t('index_keep_order')} onChange={(val) => set({ orderBy: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ width: '100%' }} aria-label={t('field_order_by')} />
             </Space>
@@ -900,7 +900,7 @@ export function StepForm({
         );
       case 'top_n':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Space>
               <Radio.Group value={v.descending ? 'top' : 'bottom'} onChange={(e) => set({ descending: e.target.value === 'top' })}>
                 <Radio.Button value="top">{t('topn_top')}</Radio.Button>
@@ -914,7 +914,7 @@ export function StepForm({
         );
       case 'remove_rows':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Space><Text>{t('field_remove_top')}</Text><InputNumber min={0} max={1000000} value={v.top} onChange={(val) => set({ top: val ?? 0 })} aria-label={t('field_remove_top')} /></Space>
             <Space><Text>{t('field_remove_bottom')}</Text><InputNumber min={0} max={1000000} value={v.bottom} onChange={(val) => set({ bottom: val ?? 0 })} aria-label={t('field_remove_bottom')} /></Space>
             <Text type="secondary" style={{ fontSize: 12 }}>{t('remove_rows_hint')}</Text>
@@ -928,7 +928,7 @@ export function StepForm({
           set({ ...patch, names: headerNames(before.slice(skip, skip + (Number(next.rows) || 1)), columns, next.joiner ?? ' ') });
         };
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Space wrap>
               <Text>{t('field_rows_above')}</Text>
               <InputNumber min={0} max={100} value={v.skip} onChange={(val) => regen({ skip: val ?? 0 })} aria-label={t('field_rows_above')} />
@@ -963,7 +963,7 @@ export function StepForm({
       }
       case 'split_rows':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Radio.Group value={v.format === 'json' ? 'json' : 'text'} onChange={(e) => set({ format: e.target.value })}>
               <Radio.Button value="text">{t('rows_from_text')}</Radio.Button>
               <Radio.Button value="json">{t('rows_from_json')}</Radio.Button>
@@ -974,7 +974,7 @@ export function StepForm({
         );
       case 'expand_rows':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_list_columns'))}
             <Radio.Group value={v.format} onChange={(e) => set({ format: e.target.value })}>
               <Radio.Button value="json">{t('rows_from_json')}</Radio.Button>
@@ -986,8 +986,8 @@ export function StepForm({
         );
       case 'append':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
               <Text strong>{t('field_other_table')}</Text>
               <Select showSearch value={v.asset} onChange={(val) => set({ asset: val })} options={tables.map((x) => ({ value: x, label: x }))} style={{ width: '100%' }} aria-label={t('field_other_table')} />
             </Space>
@@ -1000,8 +1000,8 @@ export function StepForm({
         const isPredict = kind === 'predict';
         const field = isPredict ? 'model_id' : 'decision_id';
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
               <Text strong>{isPredict ? t('field_model') : t('field_decision')}</Text>
               <Select
                 showSearch
@@ -1025,7 +1025,7 @@ export function StepForm({
       }
       case 'unpivot':
         return (
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             {multi('columns', t('field_unpivot_columns'))}
             {text('name', t('field_unpivot_name'), 'attribute')}
             {text('value', t('field_unpivot_value'), 'value')}
@@ -1057,11 +1057,11 @@ export function StepForm({
       onCancel={onCancel}
       destroyOnHidden
     >
-      <Space direction="vertical" size={14} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={14} style={{ width: '100%' }}>
         {body}
         <div className="recipe-editor__draft">
           <Text strong>{t('draft_preview')}</Text>
-          {draftError ? <Alert type="error" showIcon message={draftError} /> : null}
+          {draftError ? <Alert type="error" showIcon title={draftError} /> : null}
           {last && !draftError ? (
             <Space wrap size={4}>
               {last.rows_delta ? <Tag color="orange">{t('stat_rows', { delta: last.rows_delta })}</Tag> : null}

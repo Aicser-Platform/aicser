@@ -112,7 +112,7 @@ export function TwoFactorSetting() {
         <Paragraph type="secondary" style={{ textAlign: 'center' }}>
           {t('two_factor_manual')} <Text code copyable>{enrollment?.secret}</Text>
         </Paragraph>
-        {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
+        {error ? <Alert type="error" showIcon title={error} style={{ marginBottom: 12 }} /> : null}
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <Input.OTP length={6} value={entry} onChange={setEntry} aria-label={t('two_factor_code')} />
         </div>
@@ -145,7 +145,7 @@ export function TwoFactorSetting() {
         destroyOnHidden
       >
         <Paragraph type="secondary">{status.has_password ? t('two_factor_off_password') : t('two_factor_off_code')}</Paragraph>
-        {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
+        {error ? <Alert type="error" showIcon title={error} style={{ marginBottom: 12 }} /> : null}
         {status.has_password ? (
           <Input.Password value={entry} onChange={(e) => setEntry(e.target.value)} autoComplete="current-password" aria-label={t('two_factor_off_title')} />
         ) : (

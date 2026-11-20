@@ -23,7 +23,7 @@ export function DashboardRemixBanner({ remix, dashboardTitle }: Props) {
       showIcon
       icon={<ExperimentOutlined />}
       className="dashboard-remix-banner"
-      message={t('remix_banner_title')}
+      title={t('remix_banner_title')}
       description={
         <span>
           {t('remix_banner_desc', { name: dashboardTitle || t('default_title') })}{' '}

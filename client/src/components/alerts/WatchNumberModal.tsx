@@ -138,7 +138,7 @@ export function WatchNumberModal({ open, target, onClose }: { open: boolean; tar
             />
           </Form.Item>
           <Form.Item label={t('tell_me')} extra={t('in_app_always')}>
-            <Space direction="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" style={{ width: '100%' }}>
               <Checkbox checked={email} onChange={(e) => setEmail(e.target.checked)}>{t('channel_email')}</Checkbox>
               {email ? <Input id="watch-emails" value={emails} onChange={(e) => setEmails(e.target.value)} placeholder={t('emails_placeholder')} /> : null}
               <Checkbox checked={teams} onChange={(e) => setTeams(e.target.checked)}>{t('channel_teams')}</Checkbox>

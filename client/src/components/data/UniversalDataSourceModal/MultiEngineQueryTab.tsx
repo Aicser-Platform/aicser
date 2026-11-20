@@ -113,7 +113,7 @@ const MultiEngineQueryTab: React.FC = () => {
     return (
         <div>
             <Alert
-                message={t('multi_engine_title')}
+                title={t('multi_engine_title')}
                 description={t('multi_engine_desc')}
                 type="info"
                 showIcon
@@ -241,7 +241,7 @@ const MultiEngineQueryTab: React.FC = () => {
             </Card>
 
             <Alert
-                message={t('query_engine_optimization')}
+                title={t('query_engine_optimization')}
                 description={
                     <div>
                         <Paragraph style={{ marginBottom: 8 }}>

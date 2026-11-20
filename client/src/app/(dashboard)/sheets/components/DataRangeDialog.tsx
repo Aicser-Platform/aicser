@@ -219,7 +219,7 @@ export function DataRangeDialog({
           </Form.Item>
         ) : null}
         <Text type="secondary" style={{ fontSize: 12 }}>{t('range_live_note')}</Text>
-        {error ? <Alert type="error" showIcon message={error} style={{ marginTop: 12 }} /> : null}
+        {error ? <Alert type="error" showIcon title={error} style={{ marginTop: 12 }} /> : null}
       </Form>
     </Modal>
   );

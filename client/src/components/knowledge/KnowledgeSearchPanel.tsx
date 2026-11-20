@@ -87,7 +87,7 @@ export const KnowledgeSearchPanel: React.FC<KnowledgeSearchPanelProps> = ({
   return (
     <div>
       {showRetrievalHint ? (
-        <Alert type="info" showIcon message={t('tab_search_hint')} style={{ marginBottom: 16 }} />
+        <Alert type="info" showIcon title={t('tab_search_hint')} style={{ marginBottom: 16 }} />
       ) : null}
       <Space orientation="vertical" style={{ width: '100%' }} size="middle">
         {showDataSourceSelector && dataSourceOptions.length > 0 && (
@@ -134,7 +134,7 @@ export const KnowledgeSearchPanel: React.FC<KnowledgeSearchPanelProps> = ({
           <Alert
             type="warning"
             showIcon
-            message={t('search_failed')}
+            title={t('search_failed')}
             description={error}
             action={
               <Button size="small" onClick={() => void handleSearch()}>

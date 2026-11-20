@@ -41,7 +41,7 @@ export function TwoFactorStep({ loginToken, onDone, onCancel }: { loginToken: st
       <Typography.Paragraph type="secondary">
         {useBackup ? t('two_factor_backup_desc') : t('two_factor_desc')}
       </Typography.Paragraph>
-      {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
+      {error ? <Alert type="error" showIcon title={error} style={{ marginBottom: 12 }} /> : null}
       <Form.Item name="entry" rules={[{ required: true, message: t('two_factor_required') }]}>
         {useBackup ? (
           <Input autoFocus autoComplete="off" aria-label={t('two_factor_backup_label')} />

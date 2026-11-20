@@ -606,7 +606,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                       type="info"
                       showIcon
                       style={{ marginBottom: 14 }}
-                      message={t('platform_api_keys_mcp_title')}
+                      title={t('platform_api_keys_mcp_title')}
                       description={
                         <>
                           {t('platform_api_keys_mcp_desc')}{' '}
@@ -656,7 +656,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       >
         {createdKeyOnce && (
           <>
-            <Alert type="warning" message={t('api_key_store_securely')} style={{ marginBottom: 16 }} />
+            <Alert type="warning" title={t('api_key_store_securely')} style={{ marginBottom: 16 }} />
             <Text strong>{createdKeyOnce.name}</Text>
             <div style={{ marginTop: 8, wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12 }}>
               {createdKeyOnce.key}

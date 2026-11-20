@@ -3787,7 +3787,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             {/* Error Display - tight to control bar */}
             {error && (
               <Alert
-                message="Query Error"
+                title="Query Error"
                 description={error}
                 type="error"
                 showIcon
@@ -3798,7 +3798,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             )}
             {!isQueryValid && validationMessage && (
               <Alert
-                message="Query Validation"
+                title="Query Validation"
                 description={validationMessage}
                 type="warning"
                 showIcon
@@ -4145,7 +4145,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 );
               } catch {}
             }}
-            width={isSmallScreen ? '92vw' : Math.min(420, windowWidth * 0.85)}
+            size={isSmallScreen ? '92vw' : Math.min(420, windowWidth * 0.85)}
             styles={{
               body: { padding: 0, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
               header: { padding: '10px 16px', borderBottom: '1px solid var(--ant-color-border-secondary)' },
@@ -4550,7 +4550,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             type="info"
             showIcon
             style={{ marginBottom: 12, fontSize: 13 }}
-            message={<pre style={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: 12 }}>{optimizeImprovements}</pre>}
+            title={<pre style={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: 12 }}>{optimizeImprovements}</pre>}
           />
         )}
         <div style={{ display: 'flex', gap: 12, height: 340 }}>

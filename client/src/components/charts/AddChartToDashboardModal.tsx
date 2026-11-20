@@ -61,7 +61,7 @@ export function AddChartToDashboardModal({
         <Alert
           type="info"
           showIcon
-          message={t('pin_dashboard_no_dashboards')}
+          title={t('pin_dashboard_no_dashboards')}
           style={{ marginBottom: 12 }}
         />
       ) : null}

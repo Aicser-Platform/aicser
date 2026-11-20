@@ -243,7 +243,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
               type={issue.severity === 'error' ? 'error' : 'warning'}
               showIcon
               style={{ fontSize: 12 }}
-              message={issue.message}
+              title={issue.message}
             />
           ))}
         </div>

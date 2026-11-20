@@ -203,7 +203,7 @@ export const AIAuditLogTab: React.FC<{ days: number }> = ({ days }) => {
   );
 
   return (
-    <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" message={t('no_permission')} showIcon />}>
+    <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" title={t('no_permission')} showIcon />}>
       <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
           <Text strong>{t('subtitle')}</Text>
@@ -233,7 +233,7 @@ export const AIAuditLogTab: React.FC<{ days: number }> = ({ days }) => {
           </Space>
         </div>
 
-        {error ? <Alert type="error" message={error} style={{ marginBottom: 16 }} showIcon /> : null}
+        {error ? <Alert type="error" title={error} style={{ marginBottom: 16 }} showIcon /> : null}
 
         {loading && rows.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40 }}>

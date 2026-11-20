@@ -110,7 +110,7 @@ export function useSendTo() {
               />,
             ]}
           >
-            <Space direction="vertical" size={0}>
+            <Space orientation="vertical" size={0}>
               <Text>{d.name}</Text>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {t(`kind_${d.kind}`)} · {d.kind === 'email' ? d.recipients.join(', ') : d.address}

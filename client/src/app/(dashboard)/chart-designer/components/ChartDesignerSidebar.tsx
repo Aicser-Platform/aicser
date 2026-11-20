@@ -788,7 +788,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
           <Alert
             type="info"
             showIcon
-            message={t('add_to_dashboard_no_dashboards')}
+            title={t('add_to_dashboard_no_dashboards')}
             style={{ marginBottom: 12 }}
           />
         ) : null}
