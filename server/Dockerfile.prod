@@ -42,40 +42,39 @@ RUN python -m venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Install Python dependencies
-COPY requirements.txt requirements-databricks.txt ./
+COPY requirements.txt requirements-full.txt requirements-databricks.txt ./
 ARG WITH_DATABRICKS=false
 
-# Install Python dependencies + Playwright browser binaries used for
-# chart/dashboard PNG export. Browser system libraries belong in the runner
+# Install Python dependencies + Playwright headless shell used for
+# chart/dashboard PNG/PDF export. Browser system libraries belong in the runner
 # stage; installing them here only inflates the build cache because this stage
 # copies out the venv and Playwright cache, not apt-installed packages.
-# PyTorch (pulled in by sentence-transformers for local embeddings) runs on CPU here; the
-# default PyPI wheel bundles ~4 GB of CUDA libraries a CPU server never uses. Set
-# TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130 to build a GPU image instead.
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ARG FLAVOR=full
 ENV AISER_IMAGE_FLAVOR=${FLAVOR}
 RUN pip install --upgrade pip setuptools wheel \
  && if [ "$FLAVOR" = "full" ]; then \
-      pip install --no-cache-dir --index-url "$TORCH_INDEX_URL" torch==2.14.0; \
+      pip install --no-cache-dir -r requirements-full.txt; \
+    else \
+      pip install --no-cache-dir -r requirements.txt; \
     fi \
- && pip install --no-cache-dir -r requirements.txt \
  && if [ "$WITH_DATABRICKS" = "true" ]; then pip install --no-cache-dir -r requirements-databricks.txt; fi \
  && python -c "import telegram.ext; print('python-telegram-bot OK')" \
  && python -c "import playwright; print('playwright OK')" \
  && python -m playwright install --only-shell chromium \
- # en_core_web_md, not the ~590MB _lg -- see pii_scrubber.py's NlpEngineProvider
- # config, which now explicitly requests this exact model name.
- && python -m spacy download en_core_web_md \
- # presidio-anonymizer pins cryptography<49, conflicting with this image's
- # cryptography==50.0.0 (requirements.txt). --no-deps sidesteps the resolver
- # conflict entirely: the only place in presidio-anonymizer that actually
- # imports cryptography is its optional AES-encryption operator, which
- # src/modules/data/services/pii_scrubber.py never uses (entity detection +
- # replace-style anonymization only). Its other real dependencies are already
- # satisfied by presidio-analyzer's own requirements, installed above.
- && pip install --no-cache-dir --no-deps presidio-anonymizer==2.2.360 \
- && python -c "import presidio_analyzer, presidio_anonymizer; print('presidio OK')"
+ && if [ "$FLAVOR" = "full" ]; then \
+      # en_core_web_md, not the ~590MB _lg -- see pii_scrubber.py's NlpEngineProvider
+      # config, which now explicitly requests this exact model name.
+      python -m spacy download en_core_web_md \
+      # presidio-anonymizer pins cryptography<49, conflicting with this image's
+      # cryptography==50.0.0 (requirements.txt). --no-deps sidesteps the resolver
+      # conflict entirely: the only place in presidio-anonymizer that actually
+      # imports cryptography is its optional AES-encryption operator, which
+      # src/modules/data/services/pii_scrubber.py never uses (entity detection +
+      # replace-style anonymization only). Its other real dependencies are already
+      # satisfied by presidio-analyzer's own requirements, installed above.
+      && pip install --no-cache-dir --no-deps presidio-anonymizer==2.2.360 \
+      && python -c "import presidio_analyzer, presidio_anonymizer; print('presidio OK')"; \
+    fi
 
 # Install first-party plug-ins AFTER the main pip install so editing a plug-in
 # file does not invalidate the multi-GB dependency layer.
@@ -112,13 +111,15 @@ ARG EDITION=enterprise
 # against this public key. Both stay in the image so the customer's environment can't change them.
 ARG LICENSE_REQUIRED=false
 ARG LICENSE_PUBLIC_KEY_B64=
+ARG FLAVOR=full
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PATH="/app/.venv/bin:$PATH" \
     AISER_VERSION=$AISER_VERSION \
-    APP_VERSION=$AISER_VERSION
+    APP_VERSION=$AISER_VERSION \
+    AISER_IMAGE_FLAVOR=$FLAVOR
 
 # Install runtime dependencies + Microsoft ODBC + Chromium system libs.
 #
@@ -194,6 +195,10 @@ RUN mkdir -p ee scripts
 RUN if [ "$EDITION" = "community" ] || [ "$EDITION" = "ce" ]; then \
       echo "EDITION=$EDITION -- stripping ee/ from the CE image"; \
       rm -rf ee && mkdir -p ee; \
+    fi \
+ && if [ "$FLAVOR" = "slim" ]; then \
+      echo "FLAVOR=$FLAVOR -- stripping first-party plugins/ from the slim image"; \
+      rm -rf plugins; \
     fi
 
 # Generate the sample DuckDB file with this image's pinned duckdb version,
