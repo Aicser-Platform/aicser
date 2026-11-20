@@ -95,7 +95,10 @@ async def render_page_export(
     from playwright.async_api import async_playwright  # type: ignore
 
     async with browser_slot(), async_playwright() as pw:
-        browser = await pw.chromium.launch(args=["--no-sandbox", "--disable-setuid-sandbox"])
+        browser = await pw.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox"],
+        )
         try:
             page = await browser.new_page(
                 viewport=viewport or DEFAULT_VIEWPORT,

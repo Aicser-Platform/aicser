@@ -61,10 +61,9 @@ RUN pip install --upgrade pip setuptools wheel \
     fi \
  && pip install --no-cache-dir -r requirements.txt \
  && if [ "$WITH_DATABRICKS" = "true" ]; then pip install --no-cache-dir -r requirements-databricks.txt; fi \
- && pip install --no-cache-dir 'playwright>=1.40.0' \
  && python -c "import telegram.ext; print('python-telegram-bot OK')" \
  && python -c "import playwright; print('playwright OK')" \
- && python -m playwright install chromium \
+ && python -m playwright install --only-shell chromium \
  # en_core_web_md, not the ~590MB _lg -- see pii_scrubber.py's NlpEngineProvider
  # config, which now explicitly requests this exact model name.
  && python -m spacy download en_core_web_md \
