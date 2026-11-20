@@ -55,20 +55,12 @@ ARG WITH_DATABRICKS=false
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ARG FLAVOR=full
 ENV AISER_IMAGE_FLAVOR=${FLAVOR}
-COPY plugins/ ./plugins/
 RUN pip install --upgrade pip setuptools wheel \
  && if [ "$FLAVOR" = "full" ]; then \
       pip install --no-cache-dir --index-url "$TORCH_INDEX_URL" torch==2.14.0; \
     fi \
  && pip install --no-cache-dir -r requirements.txt \
  && if [ "$WITH_DATABRICKS" = "true" ]; then pip install --no-cache-dir -r requirements-databricks.txt; fi \
- && if [ "$FLAVOR" = "full" ]; then \
-      for p in ./plugins/*/; do \
-        if [ -f "$p/pyproject.toml" ]; then \
-          pip install --no-cache-dir --no-deps "$p"; \
-        fi; \
-      done; \
-    fi \
  && pip install --no-cache-dir 'playwright>=1.40.0' \
  && python -c "import telegram.ext; print('python-telegram-bot OK')" \
  && python -c "import playwright; print('playwright OK')" \
@@ -84,7 +76,18 @@ RUN pip install --upgrade pip setuptools wheel \
  # replace-style anonymization only). Its other real dependencies are already
  # satisfied by presidio-analyzer's own requirements, installed above.
  && pip install --no-cache-dir --no-deps presidio-anonymizer==2.2.360 \
- && python -c "import presidio_analyzer, presidio_anonymizer; print('presidio OK')" \
+ && python -c "import presidio_analyzer, presidio_anonymizer; print('presidio OK')"
+
+# Install first-party plug-ins AFTER the main pip install so editing a plug-in
+# file does not invalidate the multi-GB dependency layer.
+COPY plugins/ ./plugins/
+RUN if [ "$FLAVOR" = "full" ]; then \
+      for p in ./plugins/*/; do \
+        if [ -f "$p/pyproject.toml" ]; then \
+          pip install --no-cache-dir --no-deps "$p"; \
+        fi; \
+      done; \
+    fi \
  && find /app/.venv -name "*.pyc" -delete \
  && find /app/.venv -name "__pycache__" -type d -exec rm -rf {} +
 
