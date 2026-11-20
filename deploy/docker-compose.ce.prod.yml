@@ -37,6 +37,7 @@ services:
       dockerfile: Dockerfile.prod
       args:
         EDITION: community
+        FLAVOR: ${SERVER_FLAVOR:-full}
     container_name: aiser-server-ce-prod
     environment:
       AISER_EDITION: CE
@@ -100,6 +101,7 @@ services:
       dockerfile: Dockerfile.prod
       args:
         EDITION: community
+        FLAVOR: ${SERVER_FLAVOR:-full}
         NEXT_PUBLIC_EDITION: community
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required (browser-accessible server URL e.g. http://YOUR_HOST:8000)}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}

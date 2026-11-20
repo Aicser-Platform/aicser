@@ -69,6 +69,7 @@ services:
       dockerfile: Dockerfile.prod
       args:
         EDITION: community
+        FLAVOR: ${SERVER_FLAVOR:-full}
     container_name: aiser-server-ce
     environment:
       ROUTING_URL: ${ROUTING_URL:-http://routing:8002}
@@ -131,6 +132,7 @@ services:
       dockerfile: Dockerfile.prod
       args:
         EDITION: community
+        FLAVOR: ${SERVER_FLAVOR:-full}
         NEXT_PUBLIC_EDITION: community
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     container_name: aiser-client-ce

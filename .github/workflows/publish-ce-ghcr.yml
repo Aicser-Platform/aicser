@@ -33,15 +33,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Server image metadata
-        id: server-meta
+      - name: Server image metadata (full)
+        id: server-meta-full
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.SERVER_IMAGE }}
+          flavor: |
+            suffix=-full
           tags: |
             type=ref,event=tag
             type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Server image metadata (slim)
+        id: server-meta-slim
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.SERVER_IMAGE }}
+          flavor: |
+            suffix=-slim
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=slim,enable=${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
 
       - name: Client image metadata
         id: client-meta
@@ -53,16 +67,56 @@ jobs:
             type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
 
-      - name: Build and push CE server
+      - name: Build and push CE server (full)
         uses: docker/build-push-action@v6
         with:
           context: ./server
           file: ./server/Dockerfile.prod
           push: true
-          tags: ${{ steps.server-meta.outputs.tags }}
-          labels: ${{ steps.server-meta.outputs.labels }}
-          cache-from: type=gha,scope=server-ce
-          cache-to: type=gha,mode=max,scope=server-ce
+          tags: ${{ steps.server-meta-full.outputs.tags }}
+          labels: ${{ steps.server-meta-full.outputs.labels }}
+          build-args: |
+            EDITION=community
+            FLAVOR=full
+          cache-from: type=gha,scope=server-ce-full
+          cache-to: type=gha,mode=max,scope=server-ce-full
+
+      - name: Build and smoke-test CE server (slim)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile.prod
+          load: true
+          tags: aicser-server-ce:smoke-slim
+          build-args: |
+            EDITION=community
+            FLAVOR=slim
+          cache-from: type=gha,scope=server-ce-slim
+          cache-to: type=gha,mode=max,scope=server-ce-slim
+
+      - name: Smoke test slim image
+        run: |
+          docker run --rm aicser-server-ce:smoke-slim python -c "import src.main; print('slim boot OK')"
+          docker run --rm aicser-server-ce:smoke-slim python -c "
+          import importlib.util
+          assert importlib.util.find_spec('prophet') is None, 'prophet must not be in slim'
+          assert importlib.util.find_spec('torch') is None, 'torch must not be in slim'
+          print('slim ML exclusion OK')
+          "
+
+      - name: Push CE server (slim)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile.prod
+          push: true
+          tags: ${{ steps.server-meta-slim.outputs.tags }}
+          labels: ${{ steps.server-meta-slim.outputs.labels }}
+          build-args: |
+            EDITION=community
+            FLAVOR=slim
+          cache-from: type=gha,scope=server-ce-slim
+          cache-to: type=gha,mode=max,scope=server-ce-slim
 
       - name: Build and push CE client
         uses: docker/build-push-action@v6
